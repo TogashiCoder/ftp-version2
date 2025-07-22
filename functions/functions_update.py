@@ -113,24 +113,18 @@ def read_fournisseur(data_f):
     chemin_fichier_f = data_f['chemin_fichier']
     nom_reference_f = data_f[YAML_REFERENCE_NAME]    # nom_ref
     quantite_stock_f = data_f[YAML_QUANTITY_NAME]       # nom_qte
-    
-    df_f_info = read_dataset_file(file_name=chemin_fichier_f)   # df_info
-    
+    no_header = data_f.get('no_header', False)
+    header = None if no_header else 'infer'
+    df_f_info = read_dataset_file(file_name=chemin_fichier_f, header=header)   # df_info
     pd.set_option('display.max_columns', None) 
-    
     df_f = df_f_info['dataset'].copy()  # df
-
     # Use new helper for mapping by index or name
     ref_col = get_column_by_mapping(df_f, nom_reference_f)
     qty_col = get_column_by_mapping(df_f, quantite_stock_f)
-
     df_f[qty_col] = df_f[qty_col].apply(process_stock_value)   # df[nom_qte]
-
     reduced_cols_df = df_f[[ref_col, qty_col]].copy()
     reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
-    
     reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
-
     return {
         'Chemin': chemin_fichier_f,
         'ref': ref_col,

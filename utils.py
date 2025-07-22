@@ -196,9 +196,12 @@ def try_read_csv(file_path: str, sep: str, encoding: str, usecols=None) -> pd.Da
 def read_csv_file_checking_encodings_sep(
     file_path: str,
     usecols=None,
-    yaml_encoding_sep_path: Path = Path(YAML_ENCODING_SEP_FILE_PATH)
+    yaml_encoding_sep_path: Path = Path(YAML_ENCODING_SEP_FILE_PATH),
+    header='infer'
     ) -> tuple[pd.DataFrame, str, str]:
-    
+    """
+    Reads a CSV file, trying different encodings and separators. Accepts header argument for pandas.
+    """
     yaml_info = read_yaml_file(yaml_encoding_sep_path)
     encodings, separators = yaml_info['encodings'], yaml_info['separators']
 
@@ -207,9 +210,12 @@ def read_csv_file_checking_encodings_sep(
 
     for encoding in [detected_encoding] + encodings:
         for sep in separators:
-            df = try_read_csv(file_path, sep, encoding, usecols)
-            if df is not None and df.shape[1] >= 2:
-                return df, encoding, sep
+            try:
+                df = pd.read_csv(file_path, sep=sep, encoding=encoding, usecols=usecols, header=header)
+                if df is not None and df.shape[1] >= 2:
+                    return df, encoding, sep
+            except Exception as e:
+                logger.warning(f"Attempt to read with encoding {encoding}, separator {sep} failed: {e}")
 
     logger.error("❌ Échec de lecture : aucun encodage ou séparateur ne fonctionne.")
     raise ValueError("Échec de lecture du fichier CSV.")
@@ -218,13 +224,17 @@ def read_csv_file_checking_encodings_sep(
 # ------------------------------------------------------------------------------
 #                   Open Files of differents formats
 # ------------------------------------------------------------------------------
-def read_dataset_file(file_name: str, usecols=None) -> dict:
+def read_dataset_file(file_name: str, usecols=None, header='infer') -> dict:
+    """
+    Reads a dataset file with optional usecols and header arguments.
+    header: 'infer' (default) for files with header, None for files without header.
+    """
     logger.info(f"📥 Tentative de lecture du fichier : {file_name}  ...")
 
     try:
         ext = Path(file_name).suffix.lower()
         if ext in {'.csv', '.txt'}:
-            df,  encoding, sep = read_csv_file_checking_encodings_sep(file_name, usecols=usecols, yaml_encoding_sep_path=YAML_ENCODING_SEP_FILE_PATH)
+            df,  encoding, sep = read_csv_file_checking_encodings_sep(file_name, usecols=usecols, header=header)
             logger.info(f"📄 Fichier lu : {file_name} -- avec ({len(df)} lignes)")
             return {'dataset':df, 'encoding':encoding, 'sep':sep}
         
@@ -516,52 +526,36 @@ HEADER_MAPPINGS_PATH = get_header_mappings_path()
 ALLOWED_TARGETS = ['nom_reference', 'quantite_stock']
 
 def load_header_mappings():
-    print("\n=== DEBUG: load_header_mappings START ===")
-    print(f"DEBUG: Looking for header mappings at: {HEADER_MAPPINGS_PATH}")
-    print(f"DEBUG: Current working directory: {os.getcwd()}")
-    print(f"DEBUG: File exists: {HEADER_MAPPINGS_PATH.exists()}")
-    print(f"DEBUG: File is absolute path: {HEADER_MAPPINGS_PATH.is_absolute()}")
-    print(f"DEBUG: Parent directory exists: {HEADER_MAPPINGS_PATH.parent.exists()}")
-    
-    if not HEADER_MAPPINGS_PATH.exists():
-        print("DEBUG: header_mappings.yaml file not found!")
-        return {}
-        
-    try:
-        with open(HEADER_MAPPINGS_PATH, 'r', encoding='utf-8') as f:
-            content = f.read()
-            print(f"DEBUG: Raw file content (first 100 chars): {content[:100]}")
-            data = yaml.safe_load(content) or {}
-            print(f"DEBUG: Loaded mappings keys: {list(data.keys())}")
-            return data
-    except Exception as e:
-        print(f"DEBUG: Error loading mappings: {str(e)}")
-        return {}
-    finally:
-        print("=== DEBUG: load_header_mappings END ===\n")
+    """
+    Loads header mappings from YAML. Supports both old (list) and new (dict with no_header/columns) formats.
+    Returns a dict: {entity: {'no_header': bool, 'columns': list}}
+    """
+    path = get_header_mappings_path()
+    data = read_yaml_file(path)
+    result = {}
+    for entity, value in data.items():
+        if isinstance(value, dict):
+            no_header = value.get('no_header', False)
+            columns = value.get('columns', [])
+        else:
+            no_header = False
+            columns = value
+        result[entity] = {'no_header': no_header, 'columns': columns}
+    return result
 
-def save_header_mappings(mappings):
-    with open(HEADER_MAPPINGS_PATH, 'w', encoding='utf-8') as f:
-        yaml.safe_dump(mappings, f, allow_unicode=True)
 
 def get_entity_mappings(entity):
-    print("\n=== DEBUG: get_entity_mappings START ===")
-    print(f"DEBUG: Working directory: {os.getcwd()}")
-    print(f"DEBUG: utils.py location: {__file__}")
-    print(f"DEBUG: Mappings file location: {HEADER_MAPPINGS_PATH}")
-    mappings = load_header_mappings()
-    if not entity:
-        print("DEBUG: Entity is empty!")
-        return []
-    print(f"DEBUG: Looking for mappings for entity: '{entity}'")
-    print(f"DEBUG: Available mapping keys: {list(mappings.keys())}")
-    print(f"DEBUG: Type of entity: {type(entity)}")
-    print(f"DEBUG: Length of entity: {len(entity)}")
-    print(f"DEBUG: Entity bytes: {entity.encode()}")
-    result = mappings.get(entity, [])
-    print(f"DEBUG: Found mappings: {result}")
-    print("=== DEBUG: get_entity_mappings END ===\n")
-    return result
+    """
+    Returns (columns, no_header) for the given entity.
+    If not found, returns ([], False).
+    """
+    mappings_dict = load_header_mappings()
+    entry = mappings_dict.get(entity, {})
+    if isinstance(entry, dict):
+        return entry.get('columns', []), entry.get('no_header', False)
+    else:
+        return entry, False
+
 
 def set_entity_mappings(entity, mapping_list):
     mappings = load_header_mappings()

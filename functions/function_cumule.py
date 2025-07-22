@@ -17,11 +17,14 @@ valide_fichiers_fournisseurs = verifier_fichiers_existent(pret_fichiers_fourniss
 def read_data_and_save_params(index, data_f):
     print('\n\n ===============================')
     chemin = data_f['chemin_fichier']
-    nom_ref = data_f[YAML_REFERENCE_NAME]
-    nom_qte = data_f[YAML_QUANTITY_NAME]
+    # Get mapping and no_header flag
+    mappings, no_header = get_entity_mappings(index)
+    nom_ref = next((m['source'] for m in mappings if m['target'] == YAML_REFERENCE_NAME), None)
+    nom_qte = next((m['source'] for m in mappings if m['target'] == YAML_QUANTITY_NAME), None)
     print(f'chemin {chemin}, ref {nom_ref}, qte {nom_qte}')
+    header = None if no_header else 'infer'
     # Lecture du fichier
-    df_info = read_dataset_file(file_name=chemin)
+    df_info = read_dataset_file(file_name=chemin, header=header)
     pd.set_option('display.max_columns', None) 
     print('\n\n data: ', df_info['dataset'].head())
     df = df_info['dataset'].copy()

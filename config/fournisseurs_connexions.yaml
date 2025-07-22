@@ -54,10 +54,3 @@ eminia trading:
   port: 21
   type: FTP
   username: defaultEminia
-test:
-  host: 192.168.1.112
-  notes: f
-  password: fournisseur_f_pass
-  port: 21
-  type: FTP
-  username: fournisseur_f

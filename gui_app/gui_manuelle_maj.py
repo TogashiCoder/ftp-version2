@@ -79,25 +79,35 @@ class MajManuelleFrame(ctk.CTkFrame):
         if not platform:
             self.mapping_status.configure(text="Mapping : Plateforme non sélectionnée", text_color="#d6470e")
             return
-        mappings = get_entity_mappings(platform)
+        mappings, no_header = get_entity_mappings(platform)
         try:
-            data = read_dataset_file(self.supplier_file_path)
+            header = None if no_header else 'infer'
+            data = read_dataset_file(self.supplier_file_path, header=header)
             df = data['dataset']
             columns = list(df.columns)
             ref_col = next((m['source'] for m in mappings if m['target'] == 'nom_reference'), None)
             qty_col = next((m['source'] for m in mappings if m['target'] == 'quantite_stock'), None)
             missing = []
-            if not ref_col or ref_col not in columns:
-                missing.append(ref_col or 'nom_reference')
-            if not qty_col or qty_col not in columns:
-                missing.append(qty_col or 'quantite_stock')
+            # Resolve columns by index or name
+            preview_cols = []
+            for col in [ref_col, qty_col]:
+                try:
+                    idx = int(col)
+                    if 0 <= idx < len(df.columns):
+                        preview_cols.append(df.columns[idx])
+                    else:
+                        missing.append(str(col))
+                except (ValueError, TypeError):
+                    if col in df.columns:
+                        preview_cols.append(col)
+                    else:
+                        missing.append(str(col))
             if missing:
                 self.mapping_status.configure(text=f"Mapping : Invalide (colonnes manquantes: {', '.join(missing)})", text_color="#d6470e")
                 self.supplier_mapping_valid = False
             else:
                 self.mapping_status.configure(text="Mapping : Valide", text_color="#1a7f37")
                 self.supplier_mapping_valid = True
-            preview_cols = [c for c in [ref_col, qty_col] if c in df.columns]
             if preview_cols:
                 preview_df = df[preview_cols].head(10)
                 preview_modal = ctk.CTkToplevel(self)
@@ -121,22 +131,33 @@ class MajManuelleFrame(ctk.CTkFrame):
             self.result_label.configure(text="Veuillez sélectionner un fichier fournisseur.", text_color="#d6470e")
             return
         # Robust validation before processing
-        mappings = get_entity_mappings(platform)
+        mappings, no_header = get_entity_mappings(platform)
         try:
-            data = read_dataset_file(self.supplier_file_path)
+            header = None if no_header else 'infer'
+            data = read_dataset_file(self.supplier_file_path, header=header)
             df = data['dataset']
             ref_col = next((m['source'] for m in mappings if m['target'] == 'nom_reference'), None)
             qty_col = next((m['source'] for m in mappings if m['target'] == 'quantite_stock'), None)
             missing = []
-            if not ref_col or ref_col not in df.columns:
-                missing.append(ref_col or 'nom_reference')
-            if not qty_col or qty_col not in df.columns:
-                missing.append(qty_col or 'quantite_stock')
+            # Resolve columns by index or name
+            resolved_cols = []
+            for col in [ref_col, qty_col]:
+                try:
+                    idx = int(col)
+                    if 0 <= idx < len(df.columns):
+                        resolved_cols.append(df.columns[idx])
+                    else:
+                        missing.append(str(col))
+                except (ValueError, TypeError):
+                    if col in df.columns:
+                        resolved_cols.append(col)
+                    else:
+                        missing.append(str(col))
             if missing:
                 self.result_label.configure(text=f"Erreur: colonnes manquantes dans le fichier fournisseur: {', '.join(missing)}", text_color="#d6470e")
                 return
             # After renaming, check for 'ID_PRODUCT' and 'QUANTITY'
-            supplier_df = df[[ref_col, qty_col]].copy()
+            supplier_df = df[resolved_cols].copy()
             supplier_df.columns = ['ID_PRODUCT', 'QUANTITY']
             if 'ID_PRODUCT' not in supplier_df.columns or 'QUANTITY' not in supplier_df.columns:
                 self.result_label.configure(text="Erreur: mapping incorrect, colonnes 'ID_PRODUCT' ou 'QUANTITY' manquantes après renommage.", text_color="#d6470e")
@@ -166,13 +187,14 @@ class MajManuelleFrame(ctk.CTkFrame):
         import pandas as pd
         try:
             # Get mapping for platform
-            mappings = get_entity_mappings(platform)
+            mappings, no_header = get_entity_mappings(platform)
             ref_col = next((m['source'] for m in mappings if m['target'] == 'nom_reference'), None)
             qty_col = next((m['source'] for m in mappings if m['target'] == 'quantite_stock'), None)
             if not ref_col or not qty_col:
                 return "Mapping incomplet (référence ou quantité manquante)."
             # Read supplier file
-            data = read_dataset_file(supplier_file_path)
+            header = None # Always no_header for manual update
+            data = read_dataset_file(supplier_file_path, header=header)
             df = data['dataset']
             if ref_col not in df.columns or qty_col not in df.columns:
                 return f"Colonnes manquantes dans le fichier : {ref_col}, {qty_col}"
