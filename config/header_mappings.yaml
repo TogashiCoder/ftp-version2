@@ -1,0 +1,70 @@
+'07':
+- source: ProductReference
+  target: nom_reference
+- source: Stock
+  target: quantite_stock
+AS-PL:
+- source: name
+  target: nom_reference
+- source: on_depot
+  target: quantite_stock
+Abakus:
+- source: (1) KTM
+  target: nom_reference
+- source: (2) Main Warehouse
+  target: quantite_stock
+Airstal:
+- source: Part Number
+  target: nom_reference
+- source: Quantity Available
+  target: quantite_stock
+Alzura:
+- source: productReference
+  target: nom_reference
+- source: Stock
+  target: quantite_stock
+Departo:
+- source: interne Artikelnummer
+  target: nom_reference
+- source: Zustand
+  target: quantite_stock
+Drox_auto:
+- source: ID Produit
+  target: nom_reference
+- source: Quantité Offre
+  target: quantite_stock
+JPGROUP:
+- source: ITEMID
+  target: nom_reference
+- source: Viborg
+  target: quantite_stock
+Market-DE-NEW:
+- source: article_nr
+  target: nom_reference
+- source: quantity
+  target: quantite_stock
+NTY:
+- source: Codes de produits
+  target: nom_reference
+- source: Quantites
+  target: quantite_stock
+SKV:
+- source: 0
+  target: nom_reference
+- source: 2
+  target: quantite_stock
+TIELEHABERDER:
+- source: artikelnr
+  target: nom_reference
+- source: menge
+  target: quantite_stock
+eminia trading:
+- source: MPN
+  target: nom_reference
+- source: Qty Available
+  target: quantite_stock
+test:
+- source: Id
+  target: nom_reference
+- source: Stock
+  target: quantite_stock

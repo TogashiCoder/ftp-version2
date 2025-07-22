@@ -1,0 +1,8 @@
+sections:
+  errors: true
+  files_failed: true
+  files_successful: true
+  platforms_processed: true
+  products_updated: true
+  suppliers_processed: true
+  warnings: true

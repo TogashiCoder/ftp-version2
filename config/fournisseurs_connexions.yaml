@@ -1,0 +1,63 @@
+AS-PL:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur C
+  password: ynyKDL_2
+  port: 21
+  type: FTP
+  username: defaultASPL
+Abakus:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur A
+  password: 6uuN8esDJB!
+  port: 21
+  type: FTP
+  username: defaultABAKUS
+Airstal:
+  host: airstal.nq.pl
+  notes: Fournisseur B
+  password: Za73rLf78nSL8XQ
+  port: 21
+  type: FTP
+  username: droxauto.airstal
+JPGROUP:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur D
+  password: yoJcdZK@9vT
+  port: 21
+  type: FTP
+  username: defaultjpgroup
+NTY:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur E
+  password: KukhpySV3Q#Q
+  port: 21
+  type: FTP
+  username: defaultAJS
+SKV:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur F
+  password: bS_SPxGh2dhfM
+  port: 21
+  type: FTP
+  username: defaultSKV
+STORM:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur G
+  password: BA_sqnwSKTv9
+  port: 21
+  type: FTP
+  username: defaultRadia
+eminia trading:
+  host: vps104285.serveur-vps.net
+  notes: Fournisseur H
+  password: ow4QH#bbM5
+  port: 21
+  type: FTP
+  username: defaultEminia
+test:
+  host: 192.168.1.112
+  notes: f
+  password: fournisseur_f_pass
+  port: 21
+  type: FTP
+  username: fournisseur_f

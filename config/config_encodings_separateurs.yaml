@@ -1,0 +1,14 @@
+encodings:
+  - cp1252
+  - ISO-8859-1
+  - cp775
+  - utf-8
+  - utf-8-sig
+  - utf-16
+
+separators:
+  - ";"
+  - ","
+  - "|"
+  - "\t"
+  - " "

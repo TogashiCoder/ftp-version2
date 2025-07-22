@@ -1,0 +1,42 @@
+'07':
+  host: 192.168.1.112
+  notes: Platforme D
+  password: platform_d_pass
+  port: 21
+  type: FTP
+  username: platform_d
+Alzura:
+  host: 192.168.1.112
+  notes: Platforme A
+  password: platform_a_pass
+  port: 21
+  type: FTP
+  username: platform_a
+Departo:
+  host: 192.168.1.112
+  notes: Platforme B
+  password: platform_b_pass
+  port: 21
+  type: FTP
+  username: platform_b
+Drox_auto:
+  host: 192.168.1.112
+  notes: Platforme E
+  password: platform_e_pass
+  port: 21
+  type: FTP
+  username: platform_e
+Market-DE-NEW:
+  host: 192.168.1.112
+  notes: Platforme C
+  password: platform_c_pass
+  port: 21
+  type: FTP
+  username: platform_c
+TIELEHABERDER:
+  host: 192.168.1.112
+  notes: Platforme F
+  password: platform_f_pass
+  port: 21
+  type: FTP
+  username: platform_f

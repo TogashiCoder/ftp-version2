@@ -1,0 +1,69 @@
+# pricing_stock.xlsx 
+FTP_HOST_FOURNISSEUR_A=ftp.fournisseur-a.com
+FTP_USER_FOURNISSEUR_A=user_a
+FTP_PASSWORD_FOURNISSEUR_A=pass_a
+
+# ...
+FTP_HOST_FOURNISSEUR_B=ftp.fournisseur-b.com
+FTP_USER_FOURNISSEUR_B=user_b
+FTP_PASSWORD_FOURNISSEUR_B=pass_b
+
+# ...
+FTP_HOST_FOURNISSEUR_C=ftp.fournisseur-c.com
+FTP_USER_FOURNISSEUR_C=user_c
+FTP_PASSWORD_FOURNISSEUR_C=pass_c
+
+# ...
+FTP_HOST_FOURNISSEUR_D=ftp.fournisseur-d.com
+FTP_USER_FOURNISSEUR_D=user_d
+FTP_PASSWORD_FOURNISSEUR_D=pass_d
+
+# ...
+FTP_HOST_FOURNISSEUR_E=ftp.fournisseur-e.com
+FTP_USER_FOURNISSEUR_E=user_e
+FTP_PASSWORD_FOURNISSEUR_E=pass_e
+
+# ...
+FTP_HOST_FOURNISSEUR_F=ftp.fournisseur-f.com
+FTP_USER_FOURNISSEUR_F=user_f
+FTP_PASSWORD_FOURNISSEUR_F=pass_f
+
+# ...
+FTP_HOST_FOURNISSEUR_G=ftp.fournisseur-g.com
+FTP_USER_FOURNISSEUR_G=user_g
+FTP_PASSWORD_FOURNISSEUR_G=pass_g
+
+# ALZURA2025-2.csv
+FTP_HOST_PLATFORM_A=ftp.platform-a.com
+FTP_USER_PLATFORM_A=user_a
+FTP_PASSWORD_PLATFORM_A=pass_a
+
+# ...
+FTP_HOST_PLATFORM_B=ftp.platform-b.com
+FTP_USER_PLATFORM_B=user_b
+FTP_PASSWORD_PLATFORM_B=pass_b
+
+# ...
+FTP_HOST_PLATFORM_C=ftp.platform-c.com
+FTP_USER_PLATFORM_C=user_c
+FTP_PASSWORD_PLATFORM_C=pass_c
+
+# ...
+FTP_HOST_PLATFORM_D=ftp.platform-d.com
+FTP_USER_PLATFORM_D=user_d
+FTP_PASSWORD_PLATFORM_D=pass_d
+
+# ...
+FTP_HOST_PLATFORM_E=ftp.platform-e.com
+FTP_USER_PLATFORM_E=user_e
+FTP_PASSWORD_PLATFORM_E=pass_e
+
+# ...
+FTP_HOST_PLATFORM_F=ftp.platform-f.com
+FTP_USER_PLATFORM_F=user_f
+FTP_PASSWORD_PLATFORM_F=pass_f
+
+# For Gmail Notification
+EMAIL_ADDRESS=email@email.com
+EMAIL_PASSWORD=your_pass
+templates/email_report_template.html
