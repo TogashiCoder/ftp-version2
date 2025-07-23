@@ -196,28 +196,42 @@ def cumule_fournisseurs(data_fournisseurs):
     #print('df_all_fournisseus\n', df_all_fournisseus.head())
     #print(df_all_fournisseus.shape)
 
-    df_all_fournisseus = df_all_fournisseus.sort_values(by=ID_PRODUCT, ascending=True)
-    #print('-``->This is reduced row original processed', df_all_fournisseus[df_all_fournisseus[ID_PRODUCT] == 'BM91518H'])
-
-    df_cumule = df_all_fournisseus.groupby(ID_PRODUCT, as_index=False)[QUANTITY].sum()
-
-    #print('-**``**->cumule', df_cumule[df_cumule[ID_PRODUCT] == 'BM91518H'])
-    #print(df_cumule.columns)
-    #print('\\\\\\\\\\ hna pass')
+    # Force ID_PRODUCT to string
+    df_all_fournisseus[ID_PRODUCT] = df_all_fournisseus[ID_PRODUCT].astype(str)
+    logger.debug(f"[DEBUG] ID_PRODUCT dtype: {df_all_fournisseus[ID_PRODUCT].dtype}, unique: {df_all_fournisseus[ID_PRODUCT].unique()[:10]}")
+    # Debug before sort/groupby
+    logger.debug(f"[DEBUG] cumule_fournisseurs: df_all_fournisseus[QUANTITY] dtype: {df_all_fournisseus[QUANTITY].dtype}, unique values: {df_all_fournisseus[QUANTITY].unique()[:10]}")
+    try:
+        df_all_fournisseus = df_all_fournisseus.sort_values(by=ID_PRODUCT, ascending=True)
+        df_cumule = df_all_fournisseus.groupby(ID_PRODUCT, as_index=False)[QUANTITY].sum()
+    except Exception as e:
+        logger.error(f"[DEBUG] Error during aggregation in cumule_fournisseurs: {e}")
+        logger.error(f"[DEBUG] Problematic values: {df_all_fournisseus[QUANTITY].unique()[:20]}")
+        raise
+    # Debug after groupby
+    logger.debug(f"[DEBUG] cumule_fournisseurs: df_cumule[QUANTITY] dtype: {df_cumule[QUANTITY].dtype}, unique values: {df_cumule[QUANTITY].unique()[:10]}")
     # ------ Sauvgarde pour validation ------
     for fournisseur, infos in data_fournisseurs.items():
         df = infos['reduced_data']
-        df_merged = df.merge(df_cumule, left_on=df[ID_PRODUCT], right_on=ID_PRODUCT, how='left', suffixes=('', '_Fourniss_After_Cumule'))
-        #print('merged:', df_merged.columns)
-        df_merged[infos['qte']] = df_merged[QUANTITY+'_Fourniss_After_Cumule']
-        df_final = df_merged.drop(columns=[ID_PRODUCT+'_Fourniss_After_Cumule'])
-        infos['reduced_data'] = df_final
-        VERIFIED_FILES_PATH.mkdir(parents=True, exist_ok=True)
-
-        #print('********* Save verified **********', f"{Path(VERIFIED_FILES_PATH) / Path(infos['Chemin']).name}")
-        logger.info('---------- Juste pour Verifier (Cumule) -----------')
-        save_file(f"{Path(VERIFIED_FILES_PATH) / Path(infos['Chemin']).name}", infos['reduced_data'],infos['encoding'], infos['sep'])
-    
+        try:
+            chemin = infos['Chemin']
+            if isinstance(chemin, list):
+                chemin_for_name = chemin[0]
+            else:
+                chemin_for_name = chemin
+            # Force ID_PRODUCT to string for merge
+            df[ID_PRODUCT] = df[ID_PRODUCT].astype(str)
+            df_merged = df.merge(df_cumule, left_on=df[ID_PRODUCT], right_on=ID_PRODUCT, how='left', suffixes=('', '_Fourniss_After_Cumule'))
+            df_merged[infos['qte']] = df_merged[QUANTITY+'_Fourniss_After_Cumule']
+            df_final = df_merged.drop(columns=[ID_PRODUCT+'_Fourniss_After_Cumule'])
+            infos['reduced_data'] = df_final
+            VERIFIED_FILES_PATH.mkdir(parents=True, exist_ok=True)
+            logger.info('---------- Juste pour Verifier (Cumule) -----------')
+            save_file(f"{Path(VERIFIED_FILES_PATH) / Path(chemin_for_name).name}", infos['reduced_data'],infos['encoding'], infos['sep'])
+        except Exception as e:
+            logger.error(f"[DEBUG] Error during merge in cumule_fournisseurs for {fournisseur}: {e}")
+            logger.error(f"[DEBUG] Problematic df: {df.head()} | df_cumule: {df_cumule.head()}")
+            raise
     return df_cumule # data_fournisseurs
 
 
@@ -237,19 +251,47 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                     df_p = df_p_info['dataset']
                     sep_p = df_p_info['sep']
                     encoding_p = df_p_info['encoding']
+                    # Handle NaN/None before processing
+                    df_p[quantite_stock_p] = df_p[quantite_stock_p].fillna(0)
+                    df_p[quantite_stock_p] = df_p[quantite_stock_p].apply(process_stock_value)
+                    logger.debug(f"[DEBUG] Platform '{name_p}' stock column dtype: {df_p[quantite_stock_p].dtype}, unique values: {df_p[quantite_stock_p].unique()[:10]}")
                     reduced_data_p = df_p[[nom_reference_p, quantite_stock_p]].copy()
                     reduced_data_p.columns = [ID_PRODUCT, QUANTITY]
-                    df_updated = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule')
+                    logger.debug(f"[DEBUG] reduced_data_p[QUANTITY] dtype: {reduced_data_p[QUANTITY].dtype}, unique values: {reduced_data_p[QUANTITY].unique()[:10]}")
+                    # Ensure ID_PRODUCT columns are string before merging
+                    reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].astype(str)
+                    data_fournisseurs_cumule[ID_PRODUCT] = data_fournisseurs_cumule[ID_PRODUCT].astype(str)
+                    try:
+                        df_updated = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule')
+                    except Exception as merge_exc:
+                        logger.error(f"[MERGE ERROR] Platform {name_p}: {merge_exc}")
+                        if report_gen:
+                            report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg=f"Merge error: {merge_exc}")
+                        continue  # Skip this platform
+                    if df_updated is None:
+                        logger.error(f"[SKIP] Platform {name_p}: update_plateforme returned None.")
+                        if report_gen:
+                            report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg="update_plateforme returned None.")
+                        continue
                     reduced_data_p = df_updated
                     map_quantites = dict(zip(reduced_data_p[ID_PRODUCT], reduced_data_p[QUANTITY]))
+                    if nom_reference_p is None or quantite_stock_p is None:
+                        logger.error(f"[SKIP] Platform {name_p}: Mapping extraction failed (nom_reference_p or quantite_stock_p is None)")
+                        if report_gen:
+                            report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg="Mapping extraction failed.")
+                        continue
                     df_p[quantite_stock_p] = df_p[nom_reference_p].map(map_quantites).fillna(df_p[quantite_stock_p])
                     platform_dir = UPDATED_FILES_PATH / name_p
                     platform_dir.mkdir(parents=True, exist_ok=True)
                     timestamp = time.strftime('%Y%m%d-%H%M%S')
-                    latest_file = platform_dir / f"{name_p}-latest.csv"
-                    archive_file = platform_dir / f"{name_p}-{timestamp}.csv"
-                    save_file(str(latest_file), df_p, encoding=encoding_p, sep=sep_p)
-                    save_file(str(archive_file), df_p, encoding=encoding_p, sep=sep_p)
+                    # Detect original extension
+                    platform_ext = Path(chemin_fichier_p).suffix.lower()
+                    # Build output file paths with same extension
+                    latest_file = platform_dir / f"{name_p}-latest{platform_ext}"
+                    archive_file = platform_dir / f"{name_p}-{timestamp}{platform_ext}"
+                    force_excel = platform_ext in {'.xls', '.xlsx'}
+                    save_file(str(latest_file), df_p, encoding=encoding_p, sep=sep_p, force_excel=force_excel)
+                    save_file(str(archive_file), df_p, encoding=encoding_p, sep=sep_p, force_excel=force_excel)
                     logger.info(f"-- -- ✅ -- --  Mise à jour effectuée et fichiers sauvegardés pour : {name_p}")
                     if report_gen:
                         report_gen.add_platform_processed(name_p)
@@ -260,6 +302,7 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                             report_gen.add_products_count(unique_refs_updated)
                 except Exception as e:
                     logger.error(f"Erreur lors de la mise à jour de la plateforme {name_p}: {e}")
+                    logger.error(f"[DEBUG] Platform '{name_p}' DataFrame: {df_p.head()}")
                     if report_gen:
                         report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg=str(e))
                         report_gen.add_error(f"Erreur mise à jour plateforme {name_p}: {e}")

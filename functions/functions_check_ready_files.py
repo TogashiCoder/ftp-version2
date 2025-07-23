@@ -34,10 +34,12 @@ def keep_data_with_header_specified(list_fichiers):
     items_valides = {}
     for item, chemin in list_fichiers.items():
         mappings, no_header, multi_file = get_entity_mappings(item)
+        logger.debug(f"DEBUG: For item {item}, loaded mappings: {mappings}")
+        logger.debug(f"YAML_REFERENCE_NAME: {YAML_REFERENCE_NAME}, YAML_QUANTITY_NAME: {YAML_QUANTITY_NAME}")
         nom_ref = next((m['source'] for m in mappings if m['target'] == YAML_REFERENCE_NAME), None)
         qte_stock = next((m['source'] for m in mappings if m['target'] == YAML_QUANTITY_NAME), None)
-        if not nom_ref or not qte_stock:
-            logger.error(f"-- ⚠️ --  {item} mapping missing nom_reference or quantite_stock")
+        if nom_ref is None or qte_stock is None:
+            logger.error(f"-- ⚠️ --  {item} mapping missing nom_reference or quantite_stock. Mappings: {mappings}")
             continue
         items_valides[item] = {
             'chemin_fichier': chemin,
@@ -57,10 +59,17 @@ def verifier_fichiers_existent(list_files):
     
     for item_file, infos in list_files.items():
         chemin = infos.get("chemin_fichier")
-        if chemin and os.path.isfile(chemin):
-            item_valides[item_file] = infos
+        if isinstance(chemin, list):
+            all_exist = all(os.path.isfile(f) for f in chemin)
+            if all_exist:
+                item_valides[item_file] = infos
+            else:
+                logger.error(f"-- ⚠️ --  Un ou plusieurs fichiers introuvables pour {item_file} → '{chemin}' → supprimé.")
         else:
-            logger.error(f"-- ⚠️ --  Fichier introuvable pour {item_file} → '{chemin}' → supprimé.")
+            if chemin and os.path.isfile(chemin):
+                item_valides[item_file] = infos
+            else:
+                logger.error(f"-- ⚠️ --  Fichier introuvable pour {item_file} → '{chemin}' → supprimé.")
     
     return item_valides
 

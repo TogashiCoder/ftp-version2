@@ -135,19 +135,26 @@ def read_yaml_file(yaml_path: Path) -> dict:
 # ------------------------------------------------------------------------------
 #                      Enregistrement d'un fichier DataFrame 
 # ------------------------------------------------------------------------------
-def save_file(file_name: str, df: pd.DataFrame, encoding: str = 'utf-8', sep: str= ',') -> pd.DataFrame:
+def save_file(file_name: str, df: pd.DataFrame, encoding: str = 'utf-8', sep: str= ',', force_excel: bool = False) -> pd.DataFrame:
     try:
         ext = Path(file_name).suffix.lower()
-        if ext in {'.csv', '.txt'}:
+        # Always use CSV for intermediate/verification saves unless force_excel is True
+        if ext in {'.csv', '.txt'} or (ext in {'.xls', '.xlsx'} and not force_excel):
+            # If .xls/.xlsx but not forced, save as .csv instead and log a warning
+            if ext in {'.xls', '.xlsx'} and not force_excel:
+                csv_file_name = str(Path(file_name).with_suffix('.csv'))
+                logger.warning(f"Requested Excel save for {file_name}, but force_excel is False. Saving as CSV: {csv_file_name}")
+                file_name = csv_file_name
+            # Ensure sep is a valid 1-character string
+            if sep is None or not isinstance(sep, str) or len(sep) != 1:
+                sep = ','
             df.to_csv(file_name, encoding=encoding, sep=sep, index=False)
-        elif ext in {'.xls', '.xlsx'}:
+        elif ext in {'.xls', '.xlsx'} and force_excel:
             df.to_excel(file_name, index=False)
         else:
             raise ValueError(f"Extension de fichier non supportée: {file_name}")
-        
         logger.info(f"-- ✅ -- Fichier enregistré en : {file_name} - avec ({len(df)} lignes)")
         return df
-    
     except Exception as e:
         logger.exception(f"-- ❌ -- Erreur lors de l'enregistrement de {file_name}: {e}")
         return pd.DataFrame()  # Retourne un DataFrame vide en cas d'erreur
@@ -272,85 +279,41 @@ def get_resource_path(relative_path: str) -> str:    # used for creating .exe (m
 #          Remove >= from Stock & change 'AVAILABLE' by 3 & 'N/A', -1 by 0
 # ------------------------------------------------------------------------------
 def process_stock_value(value):
-    """Nettoie et convertit une valeur de stock en entier.
-    Gère les valeurs textuelles et numériques de manière intelligente."""
-
-    # Convertir en chaîne propre
-    value = str(value).strip().upper()
-
-    # Dictionnaire de correspondance pour les textes courants
-    text_mappings = {
-        "AVAILABLE": 3,
-        "IN STOCK": 3,
-        "EN STOCK": 3,
-        "VERFÜGBAR": 3,
-        "DISPONIBLE": 3,
-        "YES": 1,
-        "OUI": 1,
-        "JA": 1,
-        "Y": 1,
-        "N/A": 0,
-        "NONE": 0,
-        "NO": 0,
-        "NON": 0,
-        "NEIN": 0,
-        "N": 0,
-        "DISCONTINUED": 0,
-        "ÉPUISÉ": 0,
-        "AUSVERKAUFT": 0,
-        "OUT OF STOCK": 0,
-        "RUPTURE": 0,
-        "BACKORDER": 1,
-        "PRE-ORDER": 1,
-        "LIMITED": 2,
-    }
-
-    # Vérifier les correspondances textuelles
-    for pattern, stock_value in text_mappings.items():
-        if pattern in value:
-            return stock_value
-
-    # Supprimer les symboles ambigus
-    value = re.sub(r"[<>~=±≃≅]", "", value)
-
-    # Remplacer les virgules par des points (12,5 → 12.5)
-    value = value.replace(",", ".")     
-
-    # Gérer les valeurs négatives explicites        
-    if value.startswith('-'):
-        value = '0'
-    
-    # Gérer les ranges (e.g., "5-10" -> prendre la valeur minimale)
-    if '-' in value:
-        try:
-            return int(float(value.split('-')[0].strip()))
-        except ValueError:
-            pass
-
-    # Gérer les pourcentages
-    if '%' in value:
-        try:
-            percent = float(value.replace('%', ''))
-            return int(percent / 100 * 10)  # Scale 0-100% to 0-10
-        except ValueError:
-            pass
-    
-    # Essayer de convertir proprement float → int
-    try:
-        int_value = int(float(value))
-        return max(int_value, 0)
-    except ValueError:
-        pass
-
-    # En dernier recours : extraire tous les chiffres
-    cleaned_value = re.sub(r"[^0-9]", "", value)
-    if not cleaned_value:
+    """
+    Convert stock value to integer:
+    - '>10' -> 10
+    - '<10' -> 10
+    - 'AVAILABLE' -> 100 (or adjust as needed)
+    - 'N/A', 'NA', 'NONE', '' -> 0
+    - numeric strings -> int
+    - float -> int
+    - NaN/None -> 0
+    - fallback: 0
+    """
+    import pandas as pd
+    if pd.isna(value):
         return 0
-
+    if isinstance(value, (int, float)):
+        return int(value)
+    value_str = str(value).strip().upper()
+    if value_str in ["N/A", "NA", "NONE", ""]:
+        return 0
+    if value_str == "AVAILABLE":
+        return 100  # or adjust as needed
+    if value_str.startswith(">"):
+        try:
+            return int(value_str[1:])
+        except Exception:
+            return 0
+    if value_str.startswith("<"):
+        try:
+            return int(value_str[1:])
+        except Exception:
+            return 0
+    # Try to parse as integer
     try:
-        int_value = int(cleaned_value)
-        return max(int_value, 0)
-    except ValueError:
+        return int(float(value_str))
+    except Exception:
         return 0
 
 

@@ -82,7 +82,7 @@ SKV:
   columns:
   - source: 0
     target: nom_reference
-  - source: 3
+  - source: 2
     target: quantite_stock
   multi_file: false
   no_header: true
@@ -110,11 +110,4 @@ eminia trading:
     target: quantite_stock
   multi_file: false
   no_header: false
-test:
-  columns:
-  - source: Id
-    target: nom_reference
-  - source: Stock
-    target: quantite_stock
-  multi_file: false
-  no_header: false
+

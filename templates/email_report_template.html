@@ -64,7 +64,7 @@
             <li class="file-path">✅ {{ file }}</li>
             {% endfor %}{% endif %}
             {% if sections.get('files_failed') %}{% for file in files_failed_list %}
-            <li class="file-path error">❌ {{ file.file }}<br><span style="font-size:0.95em; color:#c0392b;">Erreur : {{ file.error }}</span></li>
+            <li class="file-path error">❌ {{ file.file }}<div style="font-size:0.95em; color:#c0392b; display:block;">Erreur : {{ file.error }}</div></li>
             {% endfor %}{% endif %}
         </ul>
         {% endif %}
