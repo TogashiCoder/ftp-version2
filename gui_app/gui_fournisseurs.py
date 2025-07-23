@@ -106,7 +106,7 @@ class FournisseurAdminFrame(ctk.CTkFrame):
             return
         # Get mappings for the selected fournisseur
         entity_key = self.selected_fournisseur.strip()
-        columns, no_header = get_entity_mappings(entity_key)
+        columns, no_header, multi_file = get_entity_mappings(entity_key)
         if not columns:
             ctk.CTkLabel(self.mapping_display_frame, text="Aucun mapping défini pour ce fournisseur.").pack(anchor="w", padx=5, pady=2)
             return
@@ -254,10 +254,10 @@ class FournisseurAdminFrame(ctk.CTkFrame):
             messagebox.showinfo("Info", "Sélectionnez un fournisseur pour gérer les mappings.")
             return
         from utils import get_entity_mappings, set_entity_mappings, ALLOWED_TARGETS, read_dataset_file, get_column_by_mapping
-        mappings, no_header = get_entity_mappings(self.selected_fournisseur)
+        columns, no_header, multi_file = get_entity_mappings(self.selected_fournisseur)
         modal = ctk.CTkToplevel(self)
         modal.title(f"Mappings de colonnes pour {self.selected_fournisseur}")
-        modal.geometry("600x450")
+        modal.geometry("600x500")
         modal.grab_set()
         modal.focus()
         modal.resizable(False, False)
@@ -274,7 +274,7 @@ class FournisseurAdminFrame(ctk.CTkFrame):
                 w[1].destroy()
                 w[2].destroy()
             row_widgets.clear()
-            for idx, mapping in enumerate(mappings):
+            for idx, mapping in enumerate(columns):
                 src_var = ctk.StringVar(value=mapping.get('source',''))
                 tgt_var = ctk.StringVar(value=mapping.get('target',''))
                 src_entry = ctk.CTkEntry(table_frame, textvariable=src_var, width=200)
@@ -286,22 +286,33 @@ class FournisseurAdminFrame(ctk.CTkFrame):
                 del_btn.grid(row=idx+1, column=2, padx=2)
                 row_widgets.append((src_entry, tgt_combo, del_btn))
         def add_mapping():
-            mappings.append({'source':'','target':ALLOWED_TARGETS[0]})
+            columns.append({'source':'','target':ALLOWED_TARGETS[0]})
             refresh_mapping_table()
         def delete_mapping(idx):
-            if 0 <= idx < len(mappings):
-                mappings.pop(idx)
+            if 0 <= idx < len(columns):
+                columns.pop(idx)
                 refresh_mapping_table()
+        # No-header checkbox
+        no_header_var = ctk.BooleanVar(value=no_header)
+        no_header_checkbox = ctk.CTkCheckBox(
+            modal,
+            text="Ce fournisseur fournit des fichiers SANS en-tête (mapper par index)",
+            variable=no_header_var
+        )
+        no_header_checkbox.pack(pady=5)
+        # Multi-file checkbox
+        multi_file_var = ctk.BooleanVar(value=multi_file)
+        multi_file_checkbox = ctk.CTkCheckBox(modal, text="Ce fournisseur fournit plusieurs fichiers (multi-entrepôt)", variable=multi_file_var)
+        multi_file_checkbox.pack(pady=5)
         def validate_mappings_against_file(file_path, new_mappings):
             try:
-                header = None if no_header else 'infer'
+                header = None if no_header_var.get() else 'infer'
                 data = read_dataset_file(file_path, header=header)
                 df = data['dataset']
-                columns = list(df.columns)
+                columns_ = list(df.columns)
                 missing = []
                 for m in new_mappings:
                     src = m['source']
-                    # Try to resolve as int index if possible
                     try:
                         idx = int(src)
                         if 0 <= idx < len(df.columns):
@@ -309,9 +320,9 @@ class FournisseurAdminFrame(ctk.CTkFrame):
                         else:
                             missing.append(src)
                     except ValueError:
-                        if src not in columns:
+                        if src not in columns_:
                             missing.append(src)
-                return missing, columns
+                return missing, columns_
             except Exception as e:
                 messagebox.showerror("Erreur", f"Erreur lors de la lecture du fichier: {e}")
                 return None, None
@@ -322,8 +333,14 @@ class FournisseurAdminFrame(ctk.CTkFrame):
                 tgt = tgt_combo.get().strip()
                 if src and tgt in ALLOWED_TARGETS:
                     new_mappings.append({'source': src, 'target': tgt})
+            # Save no_header and multi_file flags
+            mapping_dict = {
+                'no_header': no_header_var.get(),
+                'multi_file': multi_file_var.get(),
+                'columns': new_mappings
+            }
             if not new_mappings:
-                set_entity_mappings(self.selected_fournisseur, new_mappings)
+                set_entity_mappings(self.selected_fournisseur, mapping_dict)
                 modal.destroy()
                 self.refresh_mapping_display()
                 messagebox.showinfo("Succès", "Mappings enregistrés.")
@@ -331,18 +348,18 @@ class FournisseurAdminFrame(ctk.CTkFrame):
             file_path = filedialog.askopenfilename(title="Sélectionnez un fichier d'exemple pour valider le mapping", filetypes=[("Fichiers supportés", "*.csv *.xlsx *.xls *.txt")])
             if not file_path:
                 messagebox.showwarning("Validation", "Aucun fichier sélectionné. Validation ignorée.")
-                set_entity_mappings(self.selected_fournisseur, new_mappings)
+                set_entity_mappings(self.selected_fournisseur, mapping_dict)
                 modal.destroy()
                 self.refresh_mapping_display()
                 messagebox.showinfo("Succès", "Mappings enregistrés.")
                 return
-            missing, columns = validate_mappings_against_file(file_path, new_mappings)
+            missing, columns_ = validate_mappings_against_file(file_path, new_mappings)
             if missing is None:
                 return
             if missing:
                 messagebox.showwarning("Colonnes manquantes", f"Les colonnes suivantes sont absentes du fichier: {', '.join(missing)}\nCorrigez le mapping ou le fichier.")
                 return
-            set_entity_mappings(self.selected_fournisseur, new_mappings)
+            set_entity_mappings(self.selected_fournisseur, mapping_dict)
             modal.destroy()
             self.refresh_mapping_display()
             messagebox.showinfo("Succès", "Mappings enregistrés et validés.")
@@ -351,7 +368,7 @@ class FournisseurAdminFrame(ctk.CTkFrame):
             if not file_path:
                 return
             try:
-                header = None if no_header else 'infer'
+                header = None if no_header_var.get() else 'infer'
                 data = read_dataset_file(file_path, header=header)
                 df = data['dataset']
                 preview_cols = []

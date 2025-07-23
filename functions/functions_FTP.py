@@ -6,6 +6,7 @@ from utils import load_fournisseurs_config, load_plateformes_config
 from config.logging_config import logger
 from config.config_path_variables import *
 from functions.functions_check_ready_files import *
+from utils import get_entity_mappings
 
 # ------------------------------------------------------------------------------
 #                           FTP Configuration
@@ -111,27 +112,51 @@ def load_fournisseurs_ftp(list_fournisseurs, report_gen=None):
     downloaded_files_F = {}
     for name, config in f_data_ftp.items():
         try:
+            # Check if this supplier is multi_file
+            _, _, multi_file = get_entity_mappings(name)
             ftp = FTP(config["host"])
             ftp.login(config["user"], config["password"])
             logger.info(f"-- ✅ --  Bien connecté à l'FTP de {name}")
             filenames = ftp.nlst()
-            ftp_file = next((f for f in filenames if f.endswith((".csv", ".xls", ".xlsx", ".txt"))), None)
-            if ftp_file:
-                extension = os.path.splitext(ftp_file)[1]
-                local_path = os.path.join(DOSSIER_FOURNISSEURS, f"{name}-{extension}")
-                success = download_file_from_ftp(ftp, ftp_file, local_path)
-                if success:
-                    downloaded_files_F[name] = local_path
-                    if report_gen:
-                        report_gen.add_supplier_processed(name)
-                        report_gen.add_file_result(local_path, success=True)
+            valid_files = [f for f in filenames if f.endswith((".csv", ".xls", ".xlsx", ".txt"))]
+            if multi_file:
+                local_paths = []
+                for ftp_file in valid_files:
+                    extension = os.path.splitext(ftp_file)[1]
+                    local_path = os.path.join(DOSSIER_FOURNISSEURS, f"{name}-{ftp_file}")
+                    success = download_file_from_ftp(ftp, ftp_file, local_path)
+                    if success:
+                        local_paths.append(local_path)
+                        if report_gen:
+                            report_gen.add_supplier_processed(name)
+                            report_gen.add_file_result(local_path, success=True)
+                    else:
+                        if report_gen:
+                            report_gen.add_file_result(local_path, success=False, error_msg=f"Échec du téléchargement pour {name}")
+                if local_paths:
+                    downloaded_files_F[name] = local_paths
                 else:
+                    logger.exception(f"-- ⚠️ --  Aucun fichier valide trouvé pour {name}")
                     if report_gen:
-                        report_gen.add_file_result(local_path, success=False, error_msg=f"Échec du téléchargement pour {name}")
+                        report_gen.add_file_result(f"Aucun fichier pour {name}", success=False, error_msg="Aucun fichier valide trouvé")
             else:
-                logger.exception(f"-- ⚠️ --  Aucun fichier valide trouvé pour {name}")
-                if report_gen:
-                    report_gen.add_file_result(f"Aucun fichier pour {name}", success=False, error_msg="Aucun fichier valide trouvé")
+                ftp_file = next((f for f in valid_files), None)
+                if ftp_file:
+                    extension = os.path.splitext(ftp_file)[1]
+                    local_path = os.path.join(DOSSIER_FOURNISSEURS, f"{name}-{extension}")
+                    success = download_file_from_ftp(ftp, ftp_file, local_path)
+                    if success:
+                        downloaded_files_F[name] = local_path
+                        if report_gen:
+                            report_gen.add_supplier_processed(name)
+                            report_gen.add_file_result(local_path, success=True)
+                    else:
+                        if report_gen:
+                            report_gen.add_file_result(local_path, success=False, error_msg=f"Échec du téléchargement pour {name}")
+                else:
+                    logger.exception(f"-- ⚠️ --  Aucun fichier valide trouvé pour {name}")
+                    if report_gen:
+                        report_gen.add_file_result(f"Aucun fichier pour {name}", success=False, error_msg="Aucun fichier valide trouvé")
             ftp.quit()
         except Exception as e:
             logger.error(f"-- ❌ --  Erreur connexion FTP pour {name} : {e}")

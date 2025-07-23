@@ -23,16 +23,17 @@ def keep_data_with_header_specified(list_fichiers):
     Returns:
         Dict avec fournisseurs valides et info associée:
         { fournisseur: {
-              'chemin_fichier': str,
+              'chemin_fichier': str or list,
               YAML_REFERENCE_NAME: str,
               YAML_QUANTITY_NAME: str,
-              'no_header': bool
+              'no_header': bool,
+              'multi_file': bool
           }, ...
         }
     '''
     items_valides = {}
     for item, chemin in list_fichiers.items():
-        mappings, no_header = get_entity_mappings(item)
+        mappings, no_header, multi_file = get_entity_mappings(item)
         nom_ref = next((m['source'] for m in mappings if m['target'] == YAML_REFERENCE_NAME), None)
         qte_stock = next((m['source'] for m in mappings if m['target'] == YAML_QUANTITY_NAME), None)
         if not nom_ref or not qte_stock:
@@ -42,7 +43,8 @@ def keep_data_with_header_specified(list_fichiers):
             'chemin_fichier': chemin,
             YAML_REFERENCE_NAME: nom_ref,
             YAML_QUANTITY_NAME: qte_stock,
-            'no_header': no_header
+            'no_header': no_header,
+            'multi_file': multi_file
         }
     return items_valides
 

@@ -114,27 +114,57 @@ def read_fournisseur(data_f):
     nom_reference_f = data_f[YAML_REFERENCE_NAME]    # nom_ref
     quantite_stock_f = data_f[YAML_QUANTITY_NAME]       # nom_qte
     no_header = data_f.get('no_header', False)
+    multi_file = data_f.get('multi_file', False)
     header = None if no_header else 'infer'
-    df_f_info = read_dataset_file(file_name=chemin_fichier_f, header=header)   # df_info
-    pd.set_option('display.max_columns', None) 
-    df_f = df_f_info['dataset'].copy()  # df
-    # Use new helper for mapping by index or name
-    ref_col = get_column_by_mapping(df_f, nom_reference_f)
-    qty_col = get_column_by_mapping(df_f, quantite_stock_f)
-    df_f[qty_col] = df_f[qty_col].apply(process_stock_value)   # df[nom_qte]
-    reduced_cols_df = df_f[[ref_col, qty_col]].copy()
-    reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
-    reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
-    return {
-        'Chemin': chemin_fichier_f,
-        'ref': ref_col,
-        'qte': qty_col,
-        'main_data': df_f,  # données brutes
-        'reduced_data': reduced_cols_df,  # données nettoyées
-        'sep': df_f_info['sep'],
-        'encoding': df_f_info['encoding']
-    }
-       
+    if multi_file and isinstance(chemin_fichier_f, list):
+        # Process all files, concatenate, and sum stock per reference
+        dfs = []
+        for file_path in chemin_fichier_f:
+            df_f_info = read_dataset_file(file_name=file_path, header=header)
+            df_f = df_f_info['dataset'].copy()
+            ref_col = get_column_by_mapping(df_f, nom_reference_f)
+            qty_col = get_column_by_mapping(df_f, quantite_stock_f)
+            df_f[qty_col] = df_f[qty_col].apply(process_stock_value)
+            reduced_cols_df = df_f[[ref_col, qty_col]].copy()
+            reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
+            reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
+            dfs.append(reduced_cols_df)
+        if dfs:
+            all_data = pd.concat(dfs, ignore_index=True)
+            # Sum stock per reference
+            reduced_cols_df = all_data.groupby(ID_PRODUCT, as_index=False)[QUANTITY].sum()
+        else:
+            reduced_cols_df = pd.DataFrame(columns=[ID_PRODUCT, QUANTITY])
+        return {
+            'Chemin': chemin_fichier_f,
+            'ref': ID_PRODUCT,
+            'qte': QUANTITY,
+            'main_data': reduced_cols_df,  # données brutes
+            'reduced_data': reduced_cols_df,  # données nettoyées
+            'sep': None,
+            'encoding': None
+        }
+    else:
+        df_f_info = read_dataset_file(file_name=chemin_fichier_f, header=header)   # df_info
+        pd.set_option('display.max_columns', None) 
+        df_f = df_f_info['dataset'].copy()  # df
+        # Use new helper for mapping by index or name
+        ref_col = get_column_by_mapping(df_f, nom_reference_f)
+        qty_col = get_column_by_mapping(df_f, quantite_stock_f)
+        df_f[qty_col] = df_f[qty_col].apply(process_stock_value)   # df[nom_qte]
+        reduced_cols_df = df_f[[ref_col, qty_col]].copy()
+        reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
+        reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
+        return {
+            'Chemin': chemin_fichier_f,
+            'ref': ref_col,
+            'qte': qty_col,
+            'main_data': df_f,  # données brutes
+            'reduced_data': reduced_cols_df,  # données nettoyées
+            'sep': df_f_info['sep'],
+            'encoding': df_f_info['encoding']
+        }
+
 
 def read_all_fournisseurs(valide_fichiers_fournisseurs):
     data_fournisseurs = {}

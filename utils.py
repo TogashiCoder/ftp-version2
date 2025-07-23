@@ -527,8 +527,8 @@ ALLOWED_TARGETS = ['nom_reference', 'quantite_stock']
 
 def load_header_mappings():
     """
-    Loads header mappings from YAML. Supports both old (list) and new (dict with no_header/columns) formats.
-    Returns a dict: {entity: {'no_header': bool, 'columns': list}}
+    Loads header mappings from YAML. Supports both old (list) and new (dict with no_header/columns/multi_file) formats.
+    Returns a dict: {entity: {'no_header': bool, 'multi_file': bool, 'columns': list}}
     """
     path = get_header_mappings_path()
     data = read_yaml_file(path)
@@ -536,30 +536,43 @@ def load_header_mappings():
     for entity, value in data.items():
         if isinstance(value, dict):
             no_header = value.get('no_header', False)
+            multi_file = value.get('multi_file', False)
             columns = value.get('columns', [])
         else:
             no_header = False
+            multi_file = False
             columns = value
-        result[entity] = {'no_header': no_header, 'columns': columns}
+        result[entity] = {'no_header': no_header, 'multi_file': multi_file, 'columns': columns}
     return result
 
 
 def get_entity_mappings(entity):
     """
-    Returns (columns, no_header) for the given entity.
-    If not found, returns ([], False).
+    Returns (columns, no_header, multi_file) for the given entity.
+    If not found, returns ([], False, False).
     """
     mappings_dict = load_header_mappings()
     entry = mappings_dict.get(entity, {})
     if isinstance(entry, dict):
-        return entry.get('columns', []), entry.get('no_header', False)
+        return entry.get('columns', []), entry.get('no_header', False), entry.get('multi_file', False)
     else:
-        return entry, False
+        return entry, False, False
 
 
-def set_entity_mappings(entity, mapping_list):
+def set_entity_mappings(entity, mapping_data):
+    """
+    Save the mapping for an entity.
+    mapping_data can be:
+      - a list of mappings (old format)
+      - a dict with keys: columns (list), no_header (bool), multi_file (bool) (new format)
+    """
     mappings = load_header_mappings()
-    mappings[entity] = [m for m in mapping_list if m.get('target') in ALLOWED_TARGETS]
+    if isinstance(mapping_data, dict):
+        # New format
+        mappings[entity] = mapping_data
+    else:
+        # Old format (list)
+        mappings[entity] = [m for m in mapping_data if m.get('target') in ALLOWED_TARGETS]
     save_header_mappings(mappings)
 
 def delete_entity_mappings(entity):
@@ -585,3 +598,12 @@ def get_column_by_mapping(df, mapping):
         idx = int(mapping)
         return df.columns[idx]
     return mapping
+
+def save_header_mappings(mappings):
+    """
+    Save the header mappings to the YAML file.
+    """
+    path = get_header_mappings_path()
+    import yaml
+    with open(path, 'w', encoding='utf-8') as f:
+        yaml.safe_dump(mappings, f, allow_unicode=True)
