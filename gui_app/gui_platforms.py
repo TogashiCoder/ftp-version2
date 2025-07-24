@@ -19,7 +19,10 @@ class PlateformFrame(ctk.CTkFrame):
         if not CONFIG_PATH.exists():
             return {}
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f)
+            if data is None or data == []:
+                return {}
+            return data
 
     def save_connexions(self):
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
@@ -103,7 +106,7 @@ class PlateformFrame(ctk.CTkFrame):
             return
         # Get mappings for the selected platform
         entity_key = self.selected_plateform.strip()
-        columns, no_header = get_entity_mappings(entity_key)
+        columns, no_header, _ = get_entity_mappings(entity_key)
         if not columns:
             ctk.CTkLabel(self.mapping_display_frame, text="Aucun mapping défini pour cette plateforme.").pack(anchor="w", padx=5, pady=2)
             return
@@ -249,7 +252,7 @@ class PlateformFrame(ctk.CTkFrame):
             messagebox.showinfo("Info", "Sélectionnez une plateforme pour gérer les mappings.")
             return
         from utils import get_entity_mappings, set_entity_mappings, ALLOWED_TARGETS, read_dataset_file, get_column_by_mapping
-        mappings, no_header = get_entity_mappings(self.selected_plateform)
+        mappings, no_header, _ = get_entity_mappings(self.selected_plateform)
         modal = ctk.CTkToplevel(self)
         modal.title(f"Mappings de colonnes pour {self.selected_plateform}")
         modal.geometry("600x450")

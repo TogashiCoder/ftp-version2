@@ -115,11 +115,12 @@ def send_test_email(smtp_user, smtp_password, recipients):
 def read_yaml_file(yaml_path: Path) -> dict:
     if not yaml_path.is_file():
         logger.error(f"-- ❌ --  Fichier introuvable : {yaml_path}")
-        raise FileNotFoundError(f"Fichier introuvable : {yaml_path}")
-
+        return {}
     try:
         with open(yaml_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
+            if data is None or data == []:
+                return {}
             if not isinstance(data, dict):
                 logger.error("-- ❌ --  Le contenu YAML doit être un dictionnaire.")
                 raise ValueError("Le fichier YAML ne contient pas un dictionnaire valide.")
@@ -200,6 +201,28 @@ def try_read_csv(file_path: str, sep: str, encoding: str, usecols=None) -> pd.Da
         return None
 
 
+def robust_read_csv(file_path, usecols=None, header='infer', encodings=None, separators=None):
+    if encodings is None:
+        encodings = ['utf-8', 'utf-8-sig', 'cp1252', 'latin1', 'iso-8859-1']
+    if separators is None:
+        separators = [',', ';', '|', '\t', ' ']
+    # Try chardet first
+    with open(file_path, 'rb') as f:
+        raw = f.read(100000)
+        guess = chardet.detect(raw)['encoding']
+        if guess and guess not in encodings:
+            encodings = [guess] + encodings
+    for encoding in encodings:
+        for sep in separators:
+            try:
+                df = pd.read_csv(file_path, encoding=encoding, sep=sep, usecols=usecols, header=header)
+                if df is not None and df.shape[1] >= 2:
+                    return df, encoding, sep
+            except Exception as e:
+                logger.warning(f"Attempt to read with encoding {encoding}, separator {sep} failed: {e}")
+    raise ValueError(f"Could not read {file_path} with tried encodings: {encodings}")
+
+
 def read_csv_file_checking_encodings_sep(
     file_path: str,
     usecols=None,
@@ -211,21 +234,8 @@ def read_csv_file_checking_encodings_sep(
     """
     yaml_info = read_yaml_file(yaml_encoding_sep_path)
     encodings, separators = yaml_info['encodings'], yaml_info['separators']
-
-    # Test rapide avec chardet
-    detected_encoding = detect_encoding_fast(file_path)
-
-    for encoding in [detected_encoding] + encodings:
-        for sep in separators:
-            try:
-                df = pd.read_csv(file_path, sep=sep, encoding=encoding, usecols=usecols, header=header)
-                if df is not None and df.shape[1] >= 2:
-                    return df, encoding, sep
-            except Exception as e:
-                logger.warning(f"Attempt to read with encoding {encoding}, separator {sep} failed: {e}")
-
-    logger.error("❌ Échec de lecture : aucun encodage ou séparateur ne fonctionne.")
-    raise ValueError("Échec de lecture du fichier CSV.")
+    # Use robust_read_csv for better detection
+    return robust_read_csv(file_path, usecols=usecols, header=header, encodings=encodings, separators=separators)
 
 
 # ------------------------------------------------------------------------------

@@ -1,11 +1,3 @@
-'07':
-  columns:
-  - source: ProductReference
-    target: nom_reference
-  - source: Stock
-    target: quantite_stock
-  multi_file: false
-  no_header: false
 AS-PL:
   columns:
   - source: name
@@ -30,43 +22,11 @@ Airstal:
     target: quantite_stock
   multi_file: false
   no_header: false
-Alzura:
-  columns:
-  - source: productReference
-    target: nom_reference
-  - source: Stock
-    target: quantite_stock
-  multi_file: false
-  no_header: false
-Departo:
-  columns:
-  - source: interne Artikelnummer
-    target: nom_reference
-  - source: Zustand
-    target: quantite_stock
-  multi_file: false
-  no_header: false
-Drox_auto:
-  columns:
-  - source: ID Produit
-    target: nom_reference
-  - source: Quantité Offre
-    target: quantite_stock
-  multi_file: false
-  no_header: false
 JPGROUP:
   columns:
   - source: ITEMID
     target: nom_reference
   - source: Viborg
-    target: quantite_stock
-  multi_file: false
-  no_header: false
-Market-DE-NEW:
-  columns:
-  - source: article_nr
-    target: nom_reference
-  - source: quantity
     target: quantite_stock
   multi_file: false
   no_header: false
@@ -80,34 +40,9 @@ NTY:
   no_header: false
 SKV:
   columns:
-  - source: 0
-    target: nom_reference
-  - source: 2
-    target: quantite_stock
-  multi_file: false
-  no_header: true
-STORM:
-  columns:
-  - source: '1'
+  - source: '0'
     target: nom_reference
   - source: '2'
     target: quantite_stock
-  multi_file: true
-  no_header: false
-TIELEHABERDER:
-  columns:
-  - source: artikelnr
-    target: nom_reference
-  - source: menge
-    target: quantite_stock
   multi_file: false
-  no_header: false
-eminia trading:
-  columns:
-  - source: MPN
-    target: nom_reference
-  - source: Qty Available
-    target: quantite_stock
-  multi_file: false
-  no_header: false
-
+  no_header: true

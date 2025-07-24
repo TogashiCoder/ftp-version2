@@ -19,7 +19,10 @@ class FournisseurAdminFrame(ctk.CTkFrame):
         if not CONFIG_PATH.exists():
             return {}
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f)
+            if data is None or data == []:
+                return {}
+            return data
 
     def save_connexions(self):
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
