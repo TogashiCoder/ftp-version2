@@ -374,28 +374,123 @@ class FournisseurAdminFrame(ctk.CTkFrame):
                 header = None if no_header_var.get() else 'infer'
                 data = read_dataset_file(file_path, header=header)
                 df = data['dataset']
+                
+                # DEBUG: Show actual column names found in CSV
+                print("=== DEBUG: Actual column names in CSV ===")
+                for idx, col in enumerate(df.columns):
+                    print(f"Column {idx}: '{col}' (type: {type(col)}, repr: {repr(col)})")
+                print("=" * 50)
+                
                 preview_cols = []
+                preview_indices = []  # Track column indices for correct data selection
+                missing_cols = []
+                
                 for src_entry, _, _ in row_widgets:
                     src = src_entry.get().strip()
+                    found_col = None
+                    found_idx = None
+                    
                     # Try to resolve as int index if possible
                     try:
                         idx = int(src)
                         if 0 <= idx < len(df.columns):
-                            preview_cols.append(df.columns[idx])
+                            found_col = df.columns[idx]
+                            found_idx = idx
+                            print(f"DEBUG: Found column by index {idx}: '{found_col}'")
                     except ValueError:
-                        if src in df.columns:
-                            preview_cols.append(src)
-                if preview_cols:
-                    preview_df = df[preview_cols].head(10)
+                        # For column names, we need special handling for NTY
+                        # Check if this is the problematic NTY file structure
+                        if (src in df.columns and 
+                            len(df.columns) >= 8 and 
+                            str(df.columns[0]).strip().lower() == "codes de produits" and
+                            str(df.columns[7]).strip().lower() == "quantites"):
+                            
+                            # This is the NTY file with misaligned headers
+                            if src == "Codes de produits":
+                                found_idx = 0  # Use column 0 for product codes (A-AR-004...)
+                                found_col = df.columns[0]
+                                print(f"DEBUG: NTY special case - '{src}' -> using column index 0 for correct data")
+                            elif src == "Quantites":
+                                found_idx = 7  # Use column 7 for quantities (1.00...)
+                                found_col = df.columns[7]
+                                print(f"DEBUG: NTY special case - '{src}' -> using column index 7 for correct data")
+                            else:
+                                # Try exact match first
+                                if src in df.columns:
+                                    found_col = src
+                                    found_idx = list(df.columns).index(src)
+                                    print(f"DEBUG: Found column by exact match: '{found_col}'")
+                        else:
+                            # Normal column name resolution
+                            if src in df.columns:
+                                found_col = src
+                                found_idx = list(df.columns).index(src)
+                                print(f"DEBUG: Found column by exact match: '{found_col}'")
+                            else:
+                                # Try case-insensitive and trimmed match
+                                src_clean = src.strip().lower()
+                                for idx, col in enumerate(df.columns):
+                                    col_clean = str(col).strip().lower()
+                                    if col_clean == src_clean:
+                                        found_col = col
+                                        found_idx = idx
+                                        print(f"DEBUG: Found column by fuzzy match: '{src}' -> '{found_col}'")
+                                        break
+                    
+                    if found_col is not None and found_idx is not None:
+                        preview_cols.append(found_col)
+                        preview_indices.append(found_idx)
+                    else:
+                        missing_cols.append(src)
+                        print(f"DEBUG: Column NOT found: '{src}'")
+                
+                if missing_cols:
+                    missing_str = ", ".join(missing_cols)
+                    available_str = ", ".join([f"{i}:'{col}'" for i, col in enumerate(df.columns)])
+                    messagebox.showwarning(
+                        "Colonnes non trouvées", 
+                        f"Colonnes non trouvées: {missing_str}\n\nColonnes disponibles:\n{available_str}\n\nUtilisez les index numériques (0, 1, 2...) si les noms ne correspondent pas exactement."
+                    )
+                
+                if preview_indices:
+                    # Use iloc to select by position for correct data
+                    preview_df = df.iloc[:, preview_indices].head(10)
+                    # Set proper column names for display
+                    preview_df.columns = preview_cols
+                    
+                    # After building preview_df -----------------------------
+                    if 'Codes de produits' in preview_df.columns:
+                        preview_df['Codes de produits'] = preview_df['Codes de produits'].astype(str).str.split(';').str[0]
+                    if 'Quantites' in preview_df.columns:
+                        import pandas as pd
+                        preview_df['Quantites'] = pd.to_numeric(preview_df['Quantites'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0).astype(int)
+                    
                     preview_modal = ctk.CTkToplevel(modal)
                     preview_modal.title("Prévisualisation du mapping")
-                    preview_modal.geometry("700x300")
-                    text = ctk.CTkTextbox(preview_modal, width=680, height=260)
+                    preview_modal.geometry("700x400")
+                    text = ctk.CTkTextbox(preview_modal, width=680, height=360)
                     text.pack(padx=10, pady=10)
-                    text.insert("end", preview_df.to_string(index=False))
+                    
+                    # Fix scientific notation display
+                    import pandas as pd
+                    old_options = pd.get_option('display.float_format')
+                    try:
+                        pd.set_option('display.float_format', '{:.0f}'.format)
+                        formatted_text = preview_df.to_string(index=False, float_format=lambda x: f'{int(x)}' if pd.notnull(x) and x == x else str(x))
+                    finally:
+                        if old_options is not None:
+                            pd.set_option('display.float_format', old_options)
+                        else:
+                            pd.reset_option('display.float_format')
+                    
+                    text.insert("end", formatted_text)
                     text.configure(state="disabled")
+                    
             except Exception as e:
                 messagebox.showerror("Erreur", f"Erreur lors de la prévisualisation: {e}")
+                print(f"DEBUG: Preview error: {e}")
+                import traceback
+                traceback.print_exc()
         add_btn = ctk.CTkButton(modal, text="➕ Ajouter mapping", command=add_mapping)
         add_btn.pack(pady=5)
         preview_btn = ctk.CTkButton(modal, text="👁️ Prévisualiser mapping", command=preview_mapping)

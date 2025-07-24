@@ -205,21 +205,163 @@ def robust_read_csv(file_path, usecols=None, header='infer', encodings=None, sep
     if encodings is None:
         encodings = ['utf-8', 'utf-8-sig', 'cp1252', 'latin1', 'iso-8859-1']
     if separators is None:
-        separators = [',', ';', '|', '\t', ' ']
-    # Try chardet first
-    with open(file_path, 'rb') as f:
-        raw = f.read(100000)
-        guess = chardet.detect(raw)['encoding']
-        if guess and guess not in encodings:
-            encodings = [guess] + encodings
+        # Prioritize semicolon for CSV files as it's more common in European data
+        separators = [';', ',', '|', '\t', ' ']
+    
+    # Check if this is likely an NTY file (contains specific patterns)
+    is_nty_file = False
+    file_name = Path(file_path).name.upper()
+    if 'NTY' in file_name or 'AJS-OFERTA' in file_name:
+        is_nty_file = True
+        logger.info(f"🔍 Detected NTY file pattern in: {file_name}")
+    
+    # Try chardet first and prioritize its detection
+    detected_encoding = None
+    try:
+        with open(file_path, 'rb') as f:
+            raw = f.read(100000)  # Read first 100KB for detection
+            guess = chardet.detect(raw)
+            if guess and guess['encoding'] and guess['confidence'] > 0.7:
+                detected_encoding = guess['encoding']
+                logger.info(f"🔍 Detected encoding: {detected_encoding} (confidence: {guess['confidence']:.2f})")
+    except Exception as e:
+        logger.warning(f"Failed to detect encoding with chardet: {e}")
+    
+    # Prioritize detected encoding
+    if detected_encoding and detected_encoding not in encodings:
+        encodings = [detected_encoding] + encodings
+    elif detected_encoding:
+        # Move detected encoding to front
+        encodings = [detected_encoding] + [enc for enc in encodings if enc != detected_encoding]
+    
+    # For NTY files, force semicolon as the first separator to try
+    if is_nty_file:
+        separators = [';'] + [sep for sep in separators if sep != ';']
+        logger.info("📌 NTY file detected - prioritizing semicolon separator")
+    
+    successful_attempts = []
+    failed_attempts = []
+    
     for encoding in encodings:
         for sep in separators:
             try:
-                df = pd.read_csv(file_path, encoding=encoding, sep=sep, usecols=usecols, header=header)
-                if df is not None and df.shape[1] >= 2:
+                # Special handling for NTY files with inconsistent field counts
+                if is_nty_file and sep == ';':
+                    try:
+                        # For NTY files, use more lenient parsing
+                        df = pd.read_csv(
+                            file_path, 
+                            encoding=encoding, 
+                            sep=sep, 
+                            usecols=usecols, 
+                            header=header,
+                            on_bad_lines='skip',  # Skip lines with too many fields
+                            engine='python'  # More flexible parser
+                        )
+                        
+                        # Validate that we got meaningful data
+                        if df is not None and df.shape[1] >= 8 and df.shape[0] > 1:
+                            logger.info(f"✅ Successfully read NTY file with encoding='{encoding}', separator='{sep}', shape={df.shape}")
+                            return df, encoding, sep
+                        else:
+                            failed_attempts.append((encoding, sep, f"NTY file validation failed: shape={df.shape if df is not None else 'None'}"))
+                            continue
+                    except Exception as e:
+                        # Try older pandas syntax if on_bad_lines not supported
+                        try:
+                            df = pd.read_csv(
+                                file_path, 
+                                encoding=encoding, 
+                                sep=sep, 
+                                usecols=usecols, 
+                                header=header,
+                                error_bad_lines=False,  # Old pandas syntax
+                                warn_bad_lines=False
+                            )
+                            if df is not None and df.shape[1] >= 8 and df.shape[0] > 1:
+                                logger.info(f"✅ Successfully read NTY file (legacy mode) with encoding='{encoding}', separator='{sep}', shape={df.shape}")
+                                return df, encoding, sep
+                        except:
+                            failed_attempts.append((encoding, sep, f"NTY parsing error: {str(e)[:50]}"))
+                            continue
+                
+                # Standard parsing for non-NTY files or other separators
+                elif header is None:
+                    # For no-header files, try a more flexible approach
+                    try:
+                        # First, try to read a sample to understand the structure
+                        sample_df = pd.read_csv(file_path, encoding=encoding, sep=sep, header=None, nrows=5)
+                        expected_cols = sample_df.shape[1]
+                        
+                        # Now read the full file with the detected column count
+                        df = pd.read_csv(
+                            file_path, 
+                            encoding=encoding, 
+                            sep=sep, 
+                            usecols=usecols, 
+                            header=header,
+                            names=list(range(expected_cols)),  # Use numeric column names
+                            on_bad_lines='warn'  # More lenient for malformed rows
+                        )
+                    except Exception:
+                        # Fallback: try the older pandas approach
+                        try:
+                            df = pd.read_csv(
+                                file_path, 
+                                encoding=encoding, 
+                                sep=sep, 
+                                usecols=usecols, 
+                                header=header,
+                                error_bad_lines=False, 
+                                warn_bad_lines=False
+                            )
+                        except TypeError:
+                            # If both approaches fail, read normally
+                            df = pd.read_csv(file_path, encoding=encoding, sep=sep, usecols=usecols, header=header)
+                else:
+                    df = pd.read_csv(file_path, encoding=encoding, sep=sep, usecols=usecols, header=header)
+                    
+                if df is not None and df.shape[1] >= 2 and df.shape[0] > 1:
+                    # Enhanced validation: check if we have reasonable data separation
+                    first_few_values = [str(df.iloc[i, 0]) if i < df.shape[0] else "" for i in range(1, min(4, df.shape[0]))]
+                    
+                    # Skip validation for NTY files as they may have complex data
+                    if not is_nty_file:
+                        # Check for common separator mismatches
+                        for sample_val in first_few_values:
+                            # If we're using space as separator but data contains semicolons, reject this
+                            if sep == ' ' and ';' in sample_val and sample_val.count(';') >= 2:
+                                failed_attempts.append((encoding, sep, f"space sep with semicolons: '{sample_val[:30]}...'"))
+                                raise ValueError("Wrong separator detected")
+                            
+                            # If we're using comma as separator but data contains semicolons, be suspicious
+                            if sep == ',' and ';' in sample_val and sample_val.count(';') >= 3:
+                                failed_attempts.append((encoding, sep, f"comma sep with many semicolons: '{sample_val[:30]}...'"))
+                                raise ValueError("Wrong separator detected")
+                            
+                            # If we're using any separator but the first column contains the expected separator, reject
+                            if sep != ';' and ';' in sample_val and sample_val.count(';') >= 2:
+                                failed_attempts.append((encoding, sep, f"non-semicolon sep with semicolons: '{sample_val[:30]}...'"))
+                                raise ValueError("Wrong separator detected")
+                    
+                    logger.info(f"✅ Successfully read file with encoding='{encoding}', separator='{sep}', shape={df.shape}")
                     return df, encoding, sep
+                else:
+                    failed_attempts.append((encoding, sep, f"insufficient data: shape={df.shape if df is not None else 'None'}"))
+            except UnicodeDecodeError as e:
+                failed_attempts.append((encoding, sep, f"Unicode error: {str(e)[:50]}..."))
             except Exception as e:
-                logger.warning(f"Attempt to read with encoding {encoding}, separator {sep} failed: {e}")
+                if "Wrong separator detected" not in str(e):
+                    failed_attempts.append((encoding, sep, f"Error: {str(e)[:50]}..."))
+    
+    # Only log warnings if we couldn't read the file at all
+    logger.error(f"❌ Failed to read {file_path} with any encoding/separator combination")
+    logger.error("Failed attempts:")
+    for encoding, sep, error in failed_attempts[:5]:  # Show only first 5 failures
+        logger.warning(f"  - encoding={encoding}, separator='{sep}': {error}")
+    if len(failed_attempts) > 5:
+        logger.warning(f"  ... and {len(failed_attempts) - 5} more attempts")
+    
     raise ValueError(f"Could not read {file_path} with tried encodings: {encodings}")
 
 
@@ -404,84 +546,6 @@ def load_plateformes_config():
         print(f"Error loading plateformes config: {e}")
         return {}
 
-def get_valid_fournisseurs(timeout=5):
-    """
-    Tests FTP connections for all configured suppliers of type 'ftp' and returns only those with valid connections.
-    Args:
-        timeout (int): Connection timeout in seconds
-    Returns:
-        list: List of supplier names with valid FTP connections
-    """
-    valid = []
-    invalid = []
-    fournisseurs = load_fournisseurs_config()
-    # Only keep those with type 'ftp'
-    fournisseurs = {k: v for k, v in fournisseurs.items() if str(v.get('type', '')).lower() == 'ftp'}
-    print(f"\nTesting FTP connections for {len(fournisseurs)} fournisseurs (type=ftp)...")
-    for name, info in fournisseurs.items():
-        try:
-            with FTP() as ftp:
-                ftp.connect(
-                    host=info['host'],
-                    port=int(info.get('port', 21)),
-                    timeout=timeout
-                )
-                ftp.login(
-                    user=info['username'],
-                    passwd=info['password']
-                )
-                valid.append(name)
-                print(f"✅ {name}: Connection successful")
-        except Exception as e:
-            invalid.append((name, str(e)))
-            print(f"❌ {name}: Connection failed - {str(e)}")
-            logger.warning(f"Fournisseur {name} FTP connection failed: {e}")
-    if invalid:
-        print("\nInvalid FTP connections:")
-        for name, error in invalid:
-            print(f"- {name}: {error}")
-    print(f"\nValid FTP connections: {len(valid)}/{len(fournisseurs)}")
-    return valid
-
-def get_valid_platforms(timeout=5):
-    """
-    Tests FTP connections for all configured platforms of type 'ftp' and returns only those with valid connections.
-    Args:
-        timeout (int): Connection timeout in seconds
-    Returns:
-        list: List of platform names with valid FTP connections
-    """
-    valid = []
-    invalid = []
-    platforms = load_plateformes_config()
-    # Only keep those with type 'ftp'
-    platforms = {k: v for k, v in platforms.items() if str(v.get('type', '')).lower() == 'ftp'}
-    print(f"\nTesting FTP connections for {len(platforms)} platforms (type=ftp)...")
-    for name, info in platforms.items():
-        try:
-            with FTP() as ftp:
-                ftp.connect(
-                    host=info['host'],
-                    port=int(info.get('port', 21)),
-                    timeout=timeout
-                )
-                ftp.login(
-                    user=info['username'],
-                    passwd=info['password']
-                )
-                valid.append(name)
-                print(f"✅ {name}: Connection successful")
-        except Exception as e:
-            invalid.append((name, str(e)))
-            print(f"❌ {name}: Connection failed - {str(e)}")
-            logger.warning(f"Platform {name} FTP connection failed: {e}")
-    if invalid:
-        print("\nInvalid FTP connections:")
-        for name, error in invalid:
-            print(f"- {name}: {error}")
-    print(f"\nValid FTP connections: {len(valid)}/{len(platforms)}")
-    return valid
-
 import yaml
 def get_header_mappings_path():
     # First try current working directory
@@ -565,12 +629,75 @@ def cleanup_orphan_mappings():
 
 # Helper to resolve column by mapping (index or name)
 def get_column_by_mapping(df, mapping):
-    if isinstance(mapping, int):
-        return df.columns[mapping]
-    if isinstance(mapping, str) and mapping.isdigit():
+    """
+    Improved column mapping that handles encoding issues and provides better error messages.
+    Returns the actual column name found, or raises ValueError with helpful debug info.
+    """
+    if mapping is None:
+        raise ValueError("Mapping is None")
+    
+    # Try integer index first
+    try:
         idx = int(mapping)
-        return df.columns[idx]
-    return mapping
+        if 0 <= idx < len(df.columns):
+            actual_col = df.columns[idx]
+            logger.debug(f"✅ Mapped by index {idx}: '{mapping}' -> '{actual_col}'")
+            return actual_col
+        else:
+            raise ValueError(f"Index {idx} out of range. Available columns: 0-{len(df.columns)-1}")
+    except ValueError:
+        pass  # Not an integer, try string matching
+    
+    # Try exact match first
+    if mapping in df.columns:
+        logger.debug(f"✅ Mapped by exact match: '{mapping}'")
+        return mapping
+    
+    # Enhanced fuzzy matching for encoding issues
+    mapping_clean = str(mapping).strip().lower()
+    
+    # Remove common special characters that might cause encoding issues
+    mapping_normalized = mapping_clean.replace('é', 'e').replace('è', 'e').replace('à', 'a').replace('ç', 'c')
+    
+    for col in df.columns:
+        col_str = str(col).strip().lower()
+        col_normalized = col_str.replace('é', 'e').replace('è', 'e').replace('à', 'a').replace('ç', 'c')
+        
+        # Try multiple matching strategies
+        if (col_str == mapping_clean or 
+            col_normalized == mapping_normalized or
+            mapping_clean in col_str or 
+            col_str in mapping_clean):
+            logger.debug(f"✅ Mapped by fuzzy match: '{mapping}' -> '{col}'")
+            return col
+    
+    # Special handling for known problematic columns
+    if "codes" in mapping_clean and "produit" in mapping_clean:
+        for col in df.columns:
+            col_str = str(col).strip().lower()
+            if "codes" in col_str and "produit" in col_str:
+                logger.debug(f"✅ Mapped by special pattern (codes/produits): '{mapping}' -> '{col}'")
+                return col
+    
+    if "quantit" in mapping_clean:
+        for col in df.columns:
+            col_str = str(col).strip().lower()
+            if "quantit" in col_str:
+                logger.debug(f"✅ Mapped by special pattern (quantites): '{mapping}' -> '{col}'")
+                return col
+    
+    # If nothing found, provide helpful error message
+    available_columns = [f"{i}: '{col}' (repr: {repr(col)})" for i, col in enumerate(df.columns)]
+    error_msg = (
+        f"Column mapping '{mapping}' not found.\n"
+        f"Available columns:\n" + 
+        "\n".join(available_columns[:10])  # Show first 10 columns
+    )
+    if len(df.columns) > 10:
+        error_msg += f"\n... and {len(df.columns) - 10} more columns"
+    
+    logger.error(f"❌ Column mapping failed: {error_msg}")
+    raise ValueError(error_msg)
 
 def save_header_mappings(mappings):
     """
@@ -580,3 +707,81 @@ def save_header_mappings(mappings):
     import yaml
     with open(path, 'w', encoding='utf-8') as f:
         yaml.safe_dump(mappings, f, allow_unicode=True)
+
+def get_valid_fournisseurs(timeout=5):
+    """
+    Tests FTP connections for all configured suppliers of type 'ftp' and returns only those with valid connections.
+    Args:
+        timeout (int): Connection timeout in seconds
+    Returns:
+        list: List of supplier names with valid FTP connections
+    """
+    valid = []
+    invalid = []
+    fournisseurs = load_fournisseurs_config()
+    # Only keep those with type 'ftp'
+    fournisseurs = {k: v for k, v in fournisseurs.items() if str(v.get('type', '')).lower() == 'ftp'}
+    print(f"\nTesting FTP connections for {len(fournisseurs)} fournisseurs (type=ftp)...")
+    for name, info in fournisseurs.items():
+        try:
+            with FTP() as ftp:
+                ftp.connect(
+                    host=info['host'],
+                    port=int(info.get('port', 21)),
+                    timeout=timeout
+                )
+                ftp.login(
+                    user=info['username'],
+                    passwd=info['password']
+                )
+                valid.append(name)
+                print(f"✅ {name}: Connection successful")
+        except Exception as e:
+            invalid.append((name, str(e)))
+            print(f"❌ {name}: Connection failed - {str(e)}")
+            logger.warning(f"Fournisseur {name} FTP connection failed: {e}")
+    if invalid:
+        print("\nInvalid FTP connections:")
+        for name, error in invalid:
+            print(f"- {name}: {error}")
+    print(f"\nValid FTP connections: {len(valid)}/{len(fournisseurs)}")
+    return valid
+
+def get_valid_platforms(timeout=5):
+    """
+    Tests FTP connections for all configured platforms of type 'ftp' and returns only those with valid connections.
+    Args:
+        timeout (int): Connection timeout in seconds
+    Returns:
+        list: List of platform names with valid FTP connections
+    """
+    valid = []
+    invalid = []
+    platforms = load_plateformes_config()
+    # Only keep those with type 'ftp'
+    platforms = {k: v for k, v in platforms.items() if str(v.get('type', '')).lower() == 'ftp'}
+    print(f"\nTesting FTP connections for {len(platforms)} platforms (type=ftp)...")
+    for name, info in platforms.items():
+        try:
+            with FTP() as ftp:
+                ftp.connect(
+                    host=info['host'],
+                    port=int(info.get('port', 21)),
+                    timeout=timeout
+                )
+                ftp.login(
+                    user=info['username'],
+                    passwd=info['password']
+                )
+                valid.append(name)
+                print(f"✅ {name}: Connection successful")
+        except Exception as e:
+            invalid.append((name, str(e)))
+            print(f"❌ {name}: Connection failed - {str(e)}")
+            logger.warning(f"Platform {name} FTP connection failed: {e}")
+    if invalid:
+        print("\nInvalid FTP connections:")
+        for name, error in invalid:
+            print(f"- {name}: {error}")
+    print(f"\nValid FTP connections: {len(valid)}/{len(platforms)}")
+    return valid

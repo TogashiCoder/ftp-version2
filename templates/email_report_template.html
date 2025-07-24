@@ -3,29 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Rapport Mise à Jour Automatique – {{ date }}</title>
-    <style type="text/css">
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f7f7; color: #222; margin: 0; padding: 0; }
-        .container { background: #fff; max-width: 700px; margin: 30px auto; border-radius: 10px; box-shadow: 0 2px 8px #ccc; padding: 32px; }
-        h1 { color: #2d7d46; font-size: 2em; margin-bottom: 0.2em; }
-        .status { font-size: 1.2em; font-weight: bold; margin-bottom: 1em; }
-        .status.success { color: #2d7d46; }
-        .status.failure { color: #c0392b; }
-        .stats-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5em; }
-        .stats-table th, .stats-table td { border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; }
-        .stats-table th { background: #f0f0f0; }
-        .section-title { font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em; }
-        .error { color: #c0392b; font-weight: bold; }
-        .warning { color: #f39c12; font-weight: bold; }
-        .file-path { font-family: 'Consolas', monospace; font-size: 0.98em; color: #555; }
-        .footer { margin-top: 2em; font-size: 0.95em; color: #888; }
-        ul { padding-left: 20px; }
-        li { margin-bottom: 6px; }
-    </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Rapport Mise à Jour Automatique</h1>
-        <div class="status {{ 'success' if status == 'success' else 'failure' }}">
+<body style="font-family: 'Segoe UI', Arial, sans-serif; background: #f7f7f7; color: #222; margin: 0; padding: 0;">
+    <div style="background: #fff; max-width: 700px; margin: 30px auto; border-radius: 10px; box-shadow: 0 2px 8px #ccc; padding: 32px;">
+        <h1 style="color: #2d7d46; font-size: 2em; margin-bottom: 0.2em;">Rapport Mise à Jour Automatique</h1>
+        <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 1em; color: {{ '#2d7d46' if status == 'success' else '#c0392b' }};">
             {% if status == 'success' %}
                 ✅ Succès
             {% else %}
@@ -33,42 +15,42 @@
             {% endif %}
             <span style="font-size:0.9em; color:#888; margin-left:10px;">({{ date }})</span>
         </div>
-        <table class="stats-table">
-            {% if sections.get('suppliers_processed') %}<tr><th>Fournisseurs traités</th><td>{{ suppliers_processed }}</td></tr>{% endif %}
-            {% if sections.get('platforms_processed') %}<tr><th>Plateformes traitées</th><td>{{ platforms_processed }}</td></tr>{% endif %}
-            {% if sections.get('files_successful') %}<tr><th>Fichiers réussis</th><td>{{ files_successful }}</td></tr>{% endif %}
-            {% if sections.get('files_failed') %}<tr><th>Fichiers échoués</th><td>{{ files_failed }}</td></tr>{% endif %}
-            {% if sections.get('products_updated') %}<tr><th>Produits mis à jour</th><td>{{ products_updated }}</td></tr>{% endif %}
-            <tr><th>Durée d'exécution</th><td>{{ duration }}</td></tr>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 1.5em;">
+            {% if sections.get('suppliers_processed') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Fournisseurs traités</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ suppliers_processed }}</td></tr>{% endif %}
+            {% if sections.get('platforms_processed') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Plateformes traitées</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ platforms_processed }}</td></tr>{% endif %}
+            {% if sections.get('files_successful') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Fichiers réussis</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ files_successful }}</td></tr>{% endif %}
+            {% if sections.get('files_failed') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Fichiers échoués</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ files_failed }}</td></tr>{% endif %}
+            {% if sections.get('products_updated') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Produits mis à jour</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ products_updated }}</td></tr>{% endif %}
+            <tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Durée d'exécution</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ duration }}</td></tr>
         </table>
         {% if sections.get('errors') and errors %}
-        <div class="section-title">Détails des erreurs</div>
-        <ul>
+        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Détails des erreurs</div>
+        <ul style="padding-left: 20px;">
             {% for error in errors %}
-            <li class="error">{{ error }}</li>
+            <li style="margin-bottom: 6px; color: #c0392b; font-weight: bold;">{{ error }}</li>
             {% endfor %}
         </ul>
         {% endif %}
         {% if sections.get('warnings') and warnings %}
-        <div class="section-title">Avertissements</div>
-        <ul>
+        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Avertissements</div>
+        <ul style="padding-left: 20px;">
             {% for warning in warnings %}
-            <li class="warning">{{ warning }}</li>
+            <li style="margin-bottom: 6px; color: #f39c12; font-weight: bold;">{{ warning }}</li>
             {% endfor %}
         </ul>
         {% endif %}
         {% if (sections.get('files_successful') and files_successful_list) or (sections.get('files_failed') and files_failed_list) %}
-        <div class="section-title">Fichiers traités</div>
-        <ul>
+        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Fichiers traités</div>
+        <ul style="padding-left: 20px;">
             {% if sections.get('files_successful') %}{% for file in files_successful_list %}
-            <li class="file-path">✅ {{ file }}</li>
+            <li style="margin-bottom: 6px; font-family: 'Consolas', monospace; font-size: 0.98em; color: #555;">✅ {{ file }}</li>
             {% endfor %}{% endif %}
             {% if sections.get('files_failed') %}{% for file in files_failed_list %}
-            <li class="file-path error">❌ {{ file.file }}<div style="font-size:0.95em; color:#c0392b; display:block;">Erreur : {{ file.error }}</div></li>
+            <li style="margin-bottom: 6px; font-family: 'Consolas', monospace; font-size: 0.98em; color: #c0392b; font-weight: bold;">❌ {{ file.file }}<div style="font-size:0.95em; color:#c0392b; display:block;">Erreur : {{ file.error }}</div></li>
             {% endfor %}{% endif %}
         </ul>
         {% endif %}
-        <div class="footer">
+        <div style="margin-top: 2em; font-size: 0.95em; color: #888;">
             Rapport généré automatiquement par le système Drox_Update_Store.<br>
             Merci d'avoir utilisé notre solution.
         </div>

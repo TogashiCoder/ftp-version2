@@ -51,6 +51,9 @@ logging.basicConfig(
     ]
 )
 
+# Suppress CSS parsing errors from email libraries
+logging.getLogger('errorhandler').setLevel(logging.CRITICAL)
+
 # Logger name
 LOGGER_NAME = 'MAJ_Fournisseurs_Plateforms'
 logger = logging.getLogger(LOGGER_NAME)

@@ -79,47 +79,137 @@ class MajManuelleFrame(ctk.CTkFrame):
         if not platform:
             self.mapping_status.configure(text="Mapping : Plateforme non sélectionnée", text_color="#d6470e")
             return
-        mappings, no_header = get_entity_mappings(platform)
+        mappings, no_header, multi_file = get_entity_mappings(platform)
         try:
             header = None if no_header else 'infer'
             data = read_dataset_file(self.supplier_file_path, header=header)
             df = data['dataset']
+            
+            # DEBUG: Show actual column names found in CSV
+            print("=== DEBUG: Actual column names in CSV ===")
+            for idx, col in enumerate(df.columns):
+                print(f"Column {idx}: '{col}' (type: {type(col)}, repr: {repr(col)})")
+            print("=" * 50)
+            
             columns = list(df.columns)
             ref_col = next((m['source'] for m in mappings if m['target'] == 'nom_reference'), None)
             qty_col = next((m['source'] for m in mappings if m['target'] == 'quantite_stock'), None)
+            
+            print(f"DEBUG: Looking for ref_col: '{ref_col}', qty_col: '{qty_col}'")
+            
             missing = []
             # Resolve columns by index or name
             preview_cols = []
-            for col in [ref_col, qty_col]:
+            preview_indices = []  # Track column indices for correct data selection
+            
+            for col_name in [ref_col, qty_col]:
+                found_col = None
+                found_idx = None
+                
                 try:
-                    idx = int(col)
+                    idx = int(col_name)
                     if 0 <= idx < len(df.columns):
-                        preview_cols.append(df.columns[idx])
-                    else:
-                        missing.append(str(col))
+                        found_col = df.columns[idx]
+                        found_idx = idx
+                        print(f"DEBUG: Found column by index {idx}: '{found_col}'")
                 except (ValueError, TypeError):
-                    if col in df.columns:
-                        preview_cols.append(col)
+                    # For column names, we need special handling for NTY
+                    # Check if this is the problematic NTY file structure
+                    if (col_name in df.columns and 
+                        len(df.columns) >= 8 and 
+                        str(df.columns[0]).strip().lower() == "codes de produits" and
+                        str(df.columns[7]).strip().lower() == "quantites"):
+                        
+                        # This is the NTY file with misaligned headers
+                        if col_name == "Codes de produits":
+                            found_idx = 0  # Use column 0 for product codes (A-AR-004...)
+                            found_col = df.columns[0]
+                            print(f"DEBUG: NTY special case - '{col_name}' -> using column index 0 for correct data")
+                        elif col_name == "Quantites":
+                            found_idx = 7  # Use column 7 for quantities (1.00...)
+                            found_col = df.columns[7]
+                            print(f"DEBUG: NTY special case - '{col_name}' -> using column index 7 for correct data")
+                        else:
+                            # Try exact match first
+                            if col_name in df.columns:
+                                found_col = col_name
+                                found_idx = list(df.columns).index(col_name)
+                                print(f"DEBUG: Found column by exact match: '{found_col}'")
                     else:
-                        missing.append(str(col))
+                        # Normal column name resolution
+                        if col_name in df.columns:
+                            found_col = col_name
+                            found_idx = list(df.columns).index(col_name)
+                            print(f"DEBUG: Found column by exact match: '{found_col}'")
+                        else:
+                            # Try case-insensitive and trimmed match
+                            if col_name:
+                                col_clean = col_name.strip().lower()
+                                for idx, col in enumerate(df.columns):
+                                    csv_col_clean = str(col).strip().lower()
+                                    if csv_col_clean == col_clean:
+                                        found_col = col
+                                        found_idx = idx
+                                        print(f"DEBUG: Found column by fuzzy match: '{col_name}' -> '{found_col}'")
+                                        break
+                
+                if found_col is not None and found_idx is not None:
+                    preview_cols.append(found_col)
+                    preview_indices.append(found_idx)
+                else:
+                    missing.append(str(col_name))
+                    print(f"DEBUG: Column NOT found: '{col_name}'")
+            
             if missing:
+                available_str = ", ".join([f"{i}:'{col}'" for i, col in enumerate(df.columns)])
                 self.mapping_status.configure(text=f"Mapping : Invalide (colonnes manquantes: {', '.join(missing)})", text_color="#d6470e")
                 self.supplier_mapping_valid = False
+                messagebox.showwarning(
+                    "Colonnes non trouvées", 
+                    f"Colonnes non trouvées: {', '.join(missing)}\n\nColonnes disponibles:\n{available_str}\n\nMettez à jour votre mapping avec les index numériques (0, 1, 2...) si les noms ne correspondent pas exactement."
+                )
             else:
                 self.mapping_status.configure(text="Mapping : Valide", text_color="#1a7f37")
                 self.supplier_mapping_valid = True
-            if preview_cols:
-                preview_df = df[preview_cols].head(10)
+            
+            if preview_indices:
+                # Use iloc to select by position for correct data
+                preview_df = df.iloc[:, preview_indices].head(10)
+                # Set proper column names for display
+                preview_df.columns = preview_cols
+                # NTY cleaning
+                if 'Codes de produits' in preview_df.columns:
+                    preview_df['Codes de produits'] = preview_df['Codes de produits'].astype(str).str.split(';').str[0]
+                if 'Quantites' in preview_df.columns:
+                    import pandas as pd
+                    preview_df['Quantites'] = pd.to_numeric(preview_df['Quantites'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0).astype(int)
+                
                 preview_modal = ctk.CTkToplevel(self)
                 preview_modal.title(f"Prévisualisation du mapping: {platform}")
-                preview_modal.geometry("700x300")
-                text = ctk.CTkTextbox(preview_modal, width=680, height=260)
+                preview_modal.geometry("700x400")
+                text = ctk.CTkTextbox(preview_modal, width=680, height=360)
                 text.pack(padx=10, pady=10)
-                text.insert("end", preview_df.to_string(index=False))
+                
+                # Fix scientific notation display
+                import pandas as pd
+                old_options = pd.get_option('display.float_format')
+                try:
+                    pd.set_option('display.float_format', '{:.0f}'.format)
+                    formatted_text = preview_df.to_string(index=False, float_format=lambda x: f'{int(x)}' if pd.notnull(x) and x == x else str(x))
+                finally:
+                    if old_options is not None:
+                        pd.set_option('display.float_format', old_options)
+                    else:
+                        pd.reset_option('display.float_format')
+                
+                text.insert("end", formatted_text)
                 text.configure(state="disabled")
         except Exception as e:
             self.mapping_status.configure(text=f"Mapping : Erreur ({e})", text_color="#d6470e")
             self.supplier_mapping_valid = False
+            print(f"DEBUG: Preview error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def run_manual_update(self):
         from utils import get_entity_mappings, read_dataset_file
@@ -131,7 +221,7 @@ class MajManuelleFrame(ctk.CTkFrame):
             self.result_label.configure(text="Veuillez sélectionner un fichier fournisseur.", text_color="#d6470e")
             return
         # Robust validation before processing
-        mappings, no_header = get_entity_mappings(platform)
+        mappings, no_header, multi_file = get_entity_mappings(platform)
         try:
             header = None if no_header else 'infer'
             data = read_dataset_file(self.supplier_file_path, header=header)
@@ -187,7 +277,7 @@ class MajManuelleFrame(ctk.CTkFrame):
         import pandas as pd
         try:
             # Get mapping for platform
-            mappings, no_header = get_entity_mappings(platform)
+            mappings, no_header, multi_file = get_entity_mappings(platform)
             ref_col = next((m['source'] for m in mappings if m['target'] == 'nom_reference'), None)
             qty_col = next((m['source'] for m in mappings if m['target'] == 'quantite_stock'), None)
             if not ref_col or not qty_col:
