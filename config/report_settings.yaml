@@ -6,3 +6,5 @@ sections:
   products_updated: true
   suppliers_processed: true
   warnings: true
+
+attach_csv: true

@@ -70,7 +70,17 @@ class ConfigurationFrame(ctk.CTkFrame):
                 if col > 1:
                     col = 0
                     row += 1
-            
+        
+        # Add CSV attachment option
+        csv_frame = ctk.CTkFrame(scrollable_frame)
+        csv_frame.grid(row=2, column=0, pady=10, sticky="ew")
+        csv_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(csv_frame, text="Options d'Export", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(5,10))
+        
+        self.attach_csv_var = ctk.BooleanVar(value=self.report_config.get('attach_csv', True))
+        ctk.CTkCheckBox(csv_frame, text="Joindre un fichier CSV avec les changements de stock", variable=self.attach_csv_var).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        
         # --- Action Buttons ---
         button_frame = ctk.CTkFrame(self, fg_color="transparent")
         button_frame.grid(row=1, column=0, padx=10, pady=(10, 20), sticky="e")
@@ -94,6 +104,9 @@ class ConfigurationFrame(ctk.CTkFrame):
         for section, var in self.report_vars.items():
             if section in report_sections:
                 report_sections[section] = var.get()
+        
+        # Save CSV attachment option
+        self.report_config['attach_csv'] = self.attach_csv_var.get()
         
         if not save_yaml_config(self.report_config, self.report_settings_path):
             messagebox.showerror("Erreur", "Échec de la sauvegarde des paramètres du rapport.")

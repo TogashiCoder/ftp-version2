@@ -307,7 +307,7 @@ class MajManuelleFrame(ctk.CTkFrame):
             plat_ref_col = ref_col
             plat_qty_col = qty_col
             # Merge and update stock
-            updated_df = update_plateforme(platform_df[[plat_ref_col, plat_qty_col]].copy(), supplier_df, platform, 'manual')
+            updated_df, _ = update_plateforme(platform_df[[plat_ref_col, plat_qty_col]].copy(), supplier_df, platform, 'manual')
             platform_df[plat_qty_col] = platform_df[plat_ref_col].map(dict(zip(updated_df['ID_PRODUCT'], updated_df['QUANTITY']))).fillna(platform_df[plat_qty_col])
             # Save updated file
             import time

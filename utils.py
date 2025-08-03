@@ -434,7 +434,9 @@ def process_stock_value(value):
     """
     Convert stock value to integer:
     - '>10' -> 10
+    - '>=10' -> 10
     - '<10' -> 10
+    - '<=10' -> 10
     - 'AVAILABLE' -> 100 (or adjust as needed)
     - 'N/A', 'NA', 'NONE', '' -> 0
     - numeric strings -> int
@@ -452,16 +454,47 @@ def process_stock_value(value):
         return 0
     if value_str == "AVAILABLE":
         return 100  # or adjust as needed
+    # Handle common stock representations
+    if value_str in ["IN STOCK", "INSTOCK", "EN STOCK", "ENSTOCK"]:
+        return 100  # or adjust as needed
+    if value_str in ["OUT OF STOCK", "OUTOFSTOCK", "RUPTURE", "ÉPUISÉ", "EPUISE"]:
+        return 0
+    # Handle >= and <=
+    if value_str.startswith(">="):
+        try:
+            return int(value_str[2:].strip())
+        except Exception:
+            return 0
+    if value_str.startswith("<="):
+        try:
+            return int(value_str[2:].strip())
+        except Exception:
+            return 0
+    # Handle > and <
     if value_str.startswith(">"):
         try:
-            return int(value_str[1:])
+            return int(value_str[1:].strip())
         except Exception:
             return 0
     if value_str.startswith("<"):
         try:
-            return int(value_str[1:])
+            return int(value_str[1:].strip())
         except Exception:
             return 0
+    # Handle + prefix (e.g., "+10" meaning more than 10)
+    if value_str.startswith("+"):
+        try:
+            return int(value_str[1:].strip())
+        except Exception:
+            return 0
+    # Handle range format (e.g., "10-20" -> take the minimum)
+    if "-" in value_str and not value_str.startswith("-"):
+        try:
+            parts = value_str.split("-")
+            if len(parts) == 2 and parts[0].strip().isdigit():
+                return int(parts[0].strip())
+        except Exception:
+            pass
     # Try to parse as integer
     try:
         return int(float(value_str))

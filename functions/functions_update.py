@@ -15,8 +15,11 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fournisseur): 
     os.makedirs(VERIFIED_FILES_PATH, exist_ok=True)
+    stock_changes = []  # Track actual changes
     try:
-
+        # Keep original quantities for comparison
+        df_platform_original = df_platform.copy()
+        
         # Nettoyage du stock fournisseur
         df_fournisseurs[QUANTITY] = df_fournisseurs[QUANTITY].apply(process_stock_value)
 
@@ -32,6 +35,22 @@ def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fourniss
             how='left',
             suffixes=('', '_fournisseur')
         )
+        
+        # Track changes before updating
+        mask = df_platform[f'{QUANTITY}_fournisseur'].notna()
+        changed_products = df_platform[mask].copy()
+        
+        # Compare old and new values
+        for idx, row in changed_products.iterrows():
+            old_qty = row[QUANTITY]
+            new_qty = row[f'{QUANTITY}_fournisseur']
+            if pd.notna(new_qty) and old_qty != new_qty:
+                stock_changes.append({
+                    'product_id': row[ID_PRODUCT],
+                    'old_quantity': int(old_qty) if pd.notna(old_qty) else 0,
+                    'new_quantity': int(new_qty),
+                    'platform': name_platform
+                })
                 
         df_platform[QUANTITY] = df_platform[f'{QUANTITY}_fournisseur'].combine_first(df_platform[QUANTITY])
         df_platform.drop(columns=[f'{QUANTITY}_fournisseur'], inplace=True)
@@ -39,9 +58,10 @@ def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fourniss
         # Sauvegarde finale des données corrigées
         # df_platform.to_csv(f'{VERIFIED_FILES_PATH}/{name_platform}-{name_fournisseur}_valeurs_identiques.csv', index=False)
 
-        return df_platform
+        return df_platform, stock_changes
     except Exception as e:
         logger.error(f"-- -- ❌ -- --  Erreur lors de la mise à jour de fichier...: {e}")
+        return None, []
 
 
 # =========================================================================================
@@ -75,7 +95,7 @@ def mettre_a_jour_Stock_old(valide_fichiers_platforms, valide_fichiers_fournisse
                     
                     df_f.columns = [ID_PRODUCT, QUANTITY]
 
-                    df_updated = update_plateforme(df_p, df_f, name_p, name_f)
+                    df_updated, _ = update_plateforme(df_p, df_f, name_p, name_f)
                     df_p = df_updated    # df_p = df_updated.copy()
 
                 df_info_origin_platform = read_dataset_file(file_name=chemin_fichier_p)
@@ -262,7 +282,7 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                     reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].astype(str)
                     data_fournisseurs_cumule[ID_PRODUCT] = data_fournisseurs_cumule[ID_PRODUCT].astype(str)
                     try:
-                        df_updated = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule')
+                        df_updated, stock_changes = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule')
                     except Exception as merge_exc:
                         logger.error(f"[MERGE ERROR] Platform {name_p}: {merge_exc}")
                         if report_gen:
@@ -274,6 +294,10 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                             report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg="update_plateforme returned None.")
                         continue
                     reduced_data_p = df_updated
+                    
+                    # Add stock changes to report
+                    if report_gen and stock_changes:
+                        report_gen.add_stock_changes(stock_changes)
                     map_quantites = dict(zip(reduced_data_p[ID_PRODUCT], reduced_data_p[QUANTITY]))
                     if nom_reference_p is None or quantite_stock_p is None:
                         logger.error(f"[SKIP] Platform {name_p}: Mapping extraction failed (nom_reference_p or quantite_stock_p is None)")
@@ -296,10 +320,7 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                     if report_gen:
                         report_gen.add_platform_processed(name_p)
                         report_gen.add_file_result(str(latest_file), success=True)
-                        # Count unique product references updated
-                        if report_gen:
-                            unique_refs_updated = reduced_data_p[ID_PRODUCT].nunique()
-                            report_gen.add_products_count(unique_refs_updated)
+                        # The actual count of updated products is now handled by add_stock_changes
                 except Exception as e:
                     logger.error(f"Erreur lors de la mise à jour de la plateforme {name_p}: {e}")
                     logger.error(f"[DEBUG] Platform '{name_p}' DataFrame: {df_p.head()}")

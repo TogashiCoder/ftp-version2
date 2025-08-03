@@ -5,8 +5,11 @@ import logging
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import yagmail
 import os
+import csv
+import pandas as pd
+from pathlib import Path
 from utils import load_yaml_config
-from config.config_path_variables import CONFIG
+from config.config_path_variables import CONFIG, LOG_FOLDER
 
 class ReportGenerator:
     def __init__(self):
@@ -18,6 +21,7 @@ class ReportGenerator:
             'files_successful': [],
             'files_failed': [],
             'products_updated': 0,
+            'stock_changes': [],  # New field to track actual changes
             'errors': [],
             'warnings': []
         }
@@ -33,6 +37,7 @@ class ReportGenerator:
             'files_successful': [],
             'files_failed': [],
             'products_updated': 0,
+            'stock_changes': [],  # Reset stock changes
             'errors': [],
             'warnings': []
         }
@@ -65,6 +70,12 @@ class ReportGenerator:
 
     def add_warning(self, warning_msg):
         self.stats['warnings'].append(warning_msg)
+    
+    def add_stock_changes(self, changes):
+        """Add stock changes to the report"""
+        self.stats['stock_changes'].extend(changes)
+        # Update the count of products actually updated
+        self.stats['products_updated'] = len(self.stats['stock_changes'])
 
     def generate_html_report(self):
         try:
@@ -96,6 +107,9 @@ class ReportGenerator:
                 context['files_failed_list'] = self.stats['files_failed']
             if context['sections'].get('products_updated', True):
                 context['products_updated'] = self.stats['products_updated']
+                # Add stock changes details
+                context['stock_changes'] = self.stats['stock_changes']
+                context['has_stock_changes'] = len(self.stats['stock_changes']) > 0
             if context['sections'].get('errors', True):
                 context['errors'] = self.stats['errors']
             if context['sections'].get('warnings', True):
@@ -114,9 +128,53 @@ class ReportGenerator:
         # Optionnel : à implémenter avec reportlab
         self.logger.info("Génération du rapport PDF non implémentée.")
         return None
+    
+    def generate_csv_report(self):
+        """Generate CSV files with stock changes - one per platform"""
+        try:
+            if not self.stats['stock_changes']:
+                self.logger.info("Aucun changement de stock à exporter en CSV.")
+                return []
+            
+            # Create timestamp for consistent naming
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Group stock changes by platform
+            df_all = pd.DataFrame(self.stats['stock_changes'])
+            platforms = df_all['platform'].unique()
+            
+            csv_files = []
+            
+            for platform in platforms:
+                # Filter data for this platform
+                df_platform = df_all[df_all['platform'] == platform].copy()
+                
+                # Add difference column
+                df_platform['difference'] = df_platform['new_quantity'] - df_platform['old_quantity']
+                
+                # Remove platform column (redundant in platform-specific file) and reorder
+                df_platform = df_platform[['product_id', 'old_quantity', 'new_quantity', 'difference']]
+                
+                # Create filename for this platform
+                csv_filename = f"stock_changes_{platform}_{timestamp}.csv"
+                csv_path = LOG_FOLDER / csv_filename
+                
+                # Save to CSV
+                df_platform.to_csv(csv_path, index=False, encoding='utf-8-sig')
+                
+                csv_files.append(csv_path)
+                self.logger.info(f"Rapport CSV généré pour {platform} : {csv_path}")
+            
+            return csv_files
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la génération des rapports CSV : {e}")
+            return []
 
     def send_email_report(self):
         notification_settings = load_yaml_config(CONFIG / "notification_settings.yaml")
+        report_settings = load_yaml_config(CONFIG / "report_settings.yaml")
+        
         if not notification_settings.get('enabled'):
             self.logger.info("L'envoi d'emails est désactivé dans la configuration.")
             return False
@@ -136,13 +194,28 @@ class ReportGenerator:
                 self.logger.error("Identifiants SMTP ou destinataires manquants dans la configuration.")
                 return False
             
+            # Prepare email contents
+            contents = [self.html_report]
+            
+            # Generate and attach CSV files if enabled and there are stock changes
+            if report_settings.get('attach_csv', True) and self.stats['stock_changes']:
+                csv_paths = self.generate_csv_report()
+                if csv_paths:
+                    for csv_path in csv_paths:
+                        if csv_path.exists():
+                            contents.append(str(csv_path))
+                            self.logger.info(f"Fichier CSV ajouté en pièce jointe : {csv_path.name}")
+            
             yag = yagmail.SMTP(user=smtp_email, password=smtp_password)
             subject = f"Rapport Mise à Jour Automatique – {datetime.now().strftime('%d/%m/%Y')}"
+            
+            # Send email with or without attachment
             yag.send(
                 to=recipients,
                 subject=subject,
-                contents=self.html_report
+                contents=contents
             )
+            
             self.logger.info(f"Rapport envoyé par email à : {', '.join(recipients)}")
             return True
         except Exception as e:

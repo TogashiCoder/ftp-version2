@@ -20,7 +20,7 @@
             {% if sections.get('platforms_processed') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Plateformes traitées</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ platforms_processed }}</td></tr>{% endif %}
             {% if sections.get('files_successful') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Fichiers réussis</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ files_successful }}</td></tr>{% endif %}
             {% if sections.get('files_failed') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Fichiers échoués</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ files_failed }}</td></tr>{% endif %}
-            {% if sections.get('products_updated') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Produits mis à jour</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ products_updated }}</td></tr>{% endif %}
+            {% if sections.get('products_updated') %}<tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Produits avec changements de stock</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ products_updated }}</td></tr>{% endif %}
             <tr><th style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; background: #f0f0f0;">Durée d'exécution</th><td style="border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left;">{{ duration }}</td></tr>
         </table>
         {% if sections.get('errors') and errors %}
@@ -49,6 +49,40 @@
             <li style="margin-bottom: 6px; font-family: 'Consolas', monospace; font-size: 0.98em; color: #c0392b; font-weight: bold;">❌ {{ file.file }}<div style="font-size:0.95em; color:#c0392b; display:block;">Erreur : {{ file.error }}</div></li>
             {% endfor %}{% endif %}
         </ul>
+        {% endif %}
+        {% if sections.get('products_updated') and has_stock_changes %}
+        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Détails des changements de stock</div>
+        <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 5px; padding: 10px; background: #f9f9f9;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.95em;">
+                <thead>
+                    <tr style="background: #e0e0e0;">
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Plateforme</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">ID Produit</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Ancien Stock</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Nouveau Stock</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Différence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for change in stock_changes[:100] %}
+                    <tr>
+                        <td style="border: 1px solid #ddd; padding: 6px;">{{ change.platform }}</td>
+                        <td style="border: 1px solid #ddd; padding: 6px; font-family: 'Consolas', monospace;">{{ change.product_id }}</td>
+                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">{{ change.old_quantity }}</td>
+                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; color: {{ '#2d7d46' if change.new_quantity > change.old_quantity else '#c0392b' }};">{{ change.new_quantity }}</td>
+                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; color: {{ '#2d7d46' if change.new_quantity > change.old_quantity else '#c0392b' }};">
+                            {% if change.new_quantity > change.old_quantity %}+{% endif %}{{ change.new_quantity - change.old_quantity }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if stock_changes|length > 100 %}
+            <p style="text-align: center; margin-top: 10px; color: #666; font-style: italic;">
+                ... et {{ stock_changes|length - 100 }} autres changements
+            </p>
+            {% endif %}
+        </div>
         {% endif %}
         <div style="margin-top: 2em; font-size: 0.95em; color: #888;">
             Rapport généré automatiquement par le système Drox_Update_Store.<br>
