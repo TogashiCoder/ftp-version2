@@ -13,7 +13,7 @@ from functions.functions_check_ready_files import *
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 
-def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fournisseur): 
+def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fournisseur, supplier_details=None): 
     os.makedirs(VERIFIED_FILES_PATH, exist_ok=True)
     stock_changes = []  # Track actual changes
     try:
@@ -45,12 +45,18 @@ def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fourniss
             old_qty = row[QUANTITY]
             new_qty = row[f'{QUANTITY}_fournisseur']
             if pd.notna(new_qty) and old_qty != new_qty:
-                stock_changes.append({
+                change_data = {
                     'product_id': row[ID_PRODUCT],
                     'old_quantity': int(old_qty) if pd.notna(old_qty) else 0,
                     'new_quantity': int(new_qty),
                     'platform': name_platform
-                })
+                }
+                
+                # Add supplier details if provided
+                if supplier_details and row[ID_PRODUCT] in supplier_details:
+                    change_data['supplier_details'] = supplier_details[row[ID_PRODUCT]]
+                
+                stock_changes.append(change_data)
                 
         df_platform[QUANTITY] = df_platform[f'{QUANTITY}_fournisseur'].combine_first(df_platform[QUANTITY])
         df_platform.drop(columns=[f'{QUANTITY}_fournisseur'], inplace=True)
@@ -255,11 +261,25 @@ def cumule_fournisseurs(data_fournisseurs):
     return df_cumule # data_fournisseurs
 
 
+def collect_supplier_details(data_fournisseurs):
+    """Collects individual supplier stock for each product"""
+    supplier_details = {}
+    for name, data in data_fournisseurs.items():
+        for _, row in data['reduced_data'].iterrows():
+            product_id = str(row[ID_PRODUCT])
+            quantity = row[QUANTITY]
+            if product_id not in supplier_details:
+                supplier_details[product_id] = {}
+            supplier_details[product_id][name] = quantity
+    return supplier_details
+
 def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs, report_gen=None):
     logger.info('--------------------- Mettre A Jour le Stock -------------------')
     if len(valide_fichiers_platforms) > 0 and len(valide_fichiers_fournisseurs)> 0:
         try: 
             data_fournisseurs = read_all_fournisseurs(valide_fichiers_fournisseurs)
+            supplier_details = collect_supplier_details(data_fournisseurs)
+            
             logger.info('----------- Calcule de cumule ------------------')
             data_fournisseurs_cumule = cumule_fournisseurs(data_fournisseurs)
             for name_p, data_p in valide_fichiers_platforms.items():
@@ -282,7 +302,7 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                     reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].astype(str)
                     data_fournisseurs_cumule[ID_PRODUCT] = data_fournisseurs_cumule[ID_PRODUCT].astype(str)
                     try:
-                        df_updated, stock_changes = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule')
+                        df_updated, stock_changes = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule', supplier_details=supplier_details)
                     except Exception as merge_exc:
                         logger.error(f"[MERGE ERROR] Platform {name_p}: {merge_exc}")
                         if report_gen:

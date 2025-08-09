@@ -139,21 +139,42 @@ class ReportGenerator:
             # Create timestamp for consistent naming
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             
-            # Group stock changes by platform
+            # Create DataFrame from stock changes
             df_all = pd.DataFrame(self.stats['stock_changes'])
-            platforms = df_all['platform'].unique()
             
+            # Get all unique supplier names
+            all_suppliers = set()
+            for change in self.stats['stock_changes']:
+                if 'supplier_details' in change and isinstance(change['supplier_details'], dict):
+                    all_suppliers.update(change['supplier_details'].keys())
+            
+            sorted_suppliers = sorted(list(all_suppliers))
+            
+            # Prepare data for DataFrame
+            records = []
+            for change in self.stats['stock_changes']:
+                record = {
+                    'platform': change['platform'],
+                    'product_id': change['product_id'],
+                    'old_quantity': change['old_quantity'],
+                    'new_quantity': change['new_quantity'],
+                    'difference': change['new_quantity'] - change['old_quantity']
+                }
+                
+                # Add individual supplier quantities
+                if 'supplier_details' in change and isinstance(change['supplier_details'], dict):
+                    for supplier in sorted_suppliers:
+                        record[f'stock_{supplier}'] = change['supplier_details'].get(supplier, 0)
+                
+                records.append(record)
+            
+            df_all = pd.DataFrame(records)
+            platforms = df_all['platform'].unique()
             csv_files = []
             
             for platform in platforms:
                 # Filter data for this platform
                 df_platform = df_all[df_all['platform'] == platform].copy()
-                
-                # Add difference column
-                df_platform['difference'] = df_platform['new_quantity'] - df_platform['old_quantity']
-                
-                # Remove platform column (redundant in platform-specific file) and reorder
-                df_platform = df_platform[['product_id', 'old_quantity', 'new_quantity', 'difference']]
                 
                 # Create filename for this platform
                 csv_filename = f"stock_changes_{platform}_{timestamp}.csv"
