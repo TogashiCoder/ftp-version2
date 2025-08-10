@@ -50,39 +50,37 @@
             {% endfor %}{% endif %}
         </ul>
         {% endif %}
-        {% if sections.get('products_updated') and has_stock_changes %}
-        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Détails des changements de stock</div>
-        <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 5px; padding: 10px; background: #f9f9f9;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.95em;">
-                <thead>
-                    <tr style="background: #e0e0e0;">
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Plateforme</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">ID Produit</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Ancien Stock</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Nouveau Stock</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Différence</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for change in stock_changes[:100] %}
-                    <tr>
-                        <td style="border: 1px solid #ddd; padding: 6px;">{{ change.platform }}</td>
-                        <td style="border: 1px solid #ddd; padding: 6px; font-family: 'Consolas', monospace;">{{ change.product_id }}</td>
-                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">{{ change.old_quantity }}</td>
-                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; color: {{ '#2d7d46' if change.new_quantity > change.old_quantity else '#c0392b' }};">{{ change.new_quantity }}</td>
-                        <td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold; color: {{ '#2d7d46' if change.new_quantity > change.old_quantity else '#c0392b' }};">
-                            {% if change.new_quantity > change.old_quantity %}+{% endif %}{{ change.new_quantity - change.old_quantity }}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% if stock_changes|length > 100 %}
-            <p style="text-align: center; margin-top: 10px; color: #666; font-style: italic;">
-                ... et {{ stock_changes|length - 100 }} autres changements
-            </p>
-            {% endif %}
-        </div>
+        {# Détails des changements de stock - section masquée pour le moment #}
+
+        {% if sections.get('products_updated') and has_platform_change_summary %}
+        <div style="font-size: 1.1em; color: #2d7d46; margin-top: 1.5em; margin-bottom: 0.5em;">Résumé par plateforme</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.95em;">
+            <thead>
+                <tr style="background: #e0e0e0;">
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Plateforme</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Articles modifiés</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">% contribution par fournisseur (y compris 0%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in platform_change_summary %}
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 6px;">{{ row.platform }}</td>
+                    <td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: bold;">{{ row.changed_count }}</td>
+                    <td style="border: 1px solid #ddd; padding: 6px;">
+                        {% if row.supplier_percentages %}
+                            {% for supplier, pct in row.supplier_percentages.items() %}
+                                {% set count = row.supplier_article_counts.get(supplier, 0) %}
+                                <span style="display:inline-block; margin-right:10px;">{{ supplier }}: <strong>{{ pct }}%</strong> ({{ count }} articles)</span>
+                            {% endfor %}
+                        {% else %}
+                            <span style="color:#888;">Aucune contribution calculable</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% endif %}
         <div style="margin-top: 2em; font-size: 0.95em; color: #888;">
             Rapport généré automatiquement par le système Drox_Update_Store.<br>

@@ -13,6 +13,17 @@ from functions.functions_check_ready_files import *
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 
+def canonicalize_product_id(value: object) -> str:
+    """Return a canonical product ID: trim, uppercase, remove non-alphanumeric."""
+    try:
+        import re
+        s = str(value).strip().upper()
+        # Remove any character that is not A-Z or 0-9
+        s = re.sub(r"[^A-Z0-9]", "", s)
+        return s
+    except Exception:
+        return str(value)
+
 def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fournisseur, supplier_details=None): 
     os.makedirs(VERIFIED_FILES_PATH, exist_ok=True)
     stock_changes = []  # Track actual changes
@@ -22,6 +33,10 @@ def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fourniss
         
         # Nettoyage du stock fournisseur
         df_fournisseurs[QUANTITY] = df_fournisseurs[QUANTITY].apply(process_stock_value)
+
+        # Canonicalize product IDs before merge (both frames)
+        df_platform[ID_PRODUCT] = df_platform[ID_PRODUCT].apply(canonicalize_product_id)
+        df_fournisseurs[ID_PRODUCT] = df_fournisseurs[ID_PRODUCT].apply(canonicalize_product_id)
 
         # Ajouter le suffixe _fournisseur après merge sur ID_PRODUCT
         # df_merged = df_platform.merge(df_fournisseurs, on=ID_PRODUCT, how='left', suffixes=('', '_fournisseur'))
@@ -53,8 +68,10 @@ def update_plateforme(df_platform, df_fournisseurs, name_platform, name_fourniss
                 }
                 
                 # Add supplier details if provided
-                if supplier_details and row[ID_PRODUCT] in supplier_details:
-                    change_data['supplier_details'] = supplier_details[row[ID_PRODUCT]]
+                if supplier_details:
+                    pid_norm = canonicalize_product_id(row[ID_PRODUCT])
+                    if pid_norm in supplier_details:
+                        change_data['supplier_details'] = supplier_details[pid_norm]
                 
                 stock_changes.append(change_data)
                 
@@ -154,6 +171,7 @@ def read_fournisseur(data_f):
             reduced_cols_df = df_f[[ref_col, qty_col]].copy()
             reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
             reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
+            reduced_cols_df[ID_PRODUCT] = reduced_cols_df[ID_PRODUCT].apply(canonicalize_product_id)
             dfs.append(reduced_cols_df)
         if dfs:
             all_data = pd.concat(dfs, ignore_index=True)
@@ -181,6 +199,7 @@ def read_fournisseur(data_f):
         reduced_cols_df = df_f[[ref_col, qty_col]].copy()
         reduced_cols_df[qty_col] = reduced_cols_df[qty_col].astype(int)
         reduced_cols_df.columns = [ID_PRODUCT, QUANTITY]
+        reduced_cols_df[ID_PRODUCT] = reduced_cols_df[ID_PRODUCT].apply(canonicalize_product_id)
         return {
             'Chemin': chemin_fichier_f,
             'ref': ref_col,
@@ -194,8 +213,9 @@ def read_fournisseur(data_f):
 
 def read_all_fournisseurs(valide_fichiers_fournisseurs):
     data_fournisseurs = {}
-    for i, (_, data_f) in enumerate(valide_fichiers_fournisseurs.items(), 1):
-        data_fournisseurs[f'Fournisseur{i}'] = read_fournisseur(data_f)
+    # Use actual supplier names as keys (instead of Fournisseur1, ...)
+    for name, data_f in valide_fichiers_fournisseurs.items():
+        data_fournisseurs[name] = read_fournisseur(data_f)
 
     #print('\n\nhere \n', data_fournisseurs['Fournisseur1']['reduced_data'].head())
     return data_fournisseurs
@@ -222,8 +242,8 @@ def cumule_fournisseurs(data_fournisseurs):
     #print('df_all_fournisseus\n', df_all_fournisseus.head())
     #print(df_all_fournisseus.shape)
 
-    # Force ID_PRODUCT to string
-    df_all_fournisseus[ID_PRODUCT] = df_all_fournisseus[ID_PRODUCT].astype(str)
+    # Force canonical ID_PRODUCT
+    df_all_fournisseus[ID_PRODUCT] = df_all_fournisseus[ID_PRODUCT].apply(canonicalize_product_id)
     logger.debug(f"[DEBUG] ID_PRODUCT dtype: {df_all_fournisseus[ID_PRODUCT].dtype}, unique: {df_all_fournisseus[ID_PRODUCT].unique()[:10]}")
     # Debug before sort/groupby
     logger.debug(f"[DEBUG] cumule_fournisseurs: df_all_fournisseus[QUANTITY] dtype: {df_all_fournisseus[QUANTITY].dtype}, unique values: {df_all_fournisseus[QUANTITY].unique()[:10]}")
@@ -245,8 +265,8 @@ def cumule_fournisseurs(data_fournisseurs):
                 chemin_for_name = chemin[0]
             else:
                 chemin_for_name = chemin
-            # Force ID_PRODUCT to string for merge
-            df[ID_PRODUCT] = df[ID_PRODUCT].astype(str)
+            # Force canonical ID for merge
+            df[ID_PRODUCT] = df[ID_PRODUCT].apply(canonicalize_product_id)
             df_merged = df.merge(df_cumule, left_on=df[ID_PRODUCT], right_on=ID_PRODUCT, how='left', suffixes=('', '_Fourniss_After_Cumule'))
             df_merged[infos['qte']] = df_merged[QUANTITY+'_Fourniss_After_Cumule']
             df_final = df_merged.drop(columns=[ID_PRODUCT+'_Fourniss_After_Cumule'])
@@ -264,13 +284,13 @@ def cumule_fournisseurs(data_fournisseurs):
 def collect_supplier_details(data_fournisseurs):
     """Collects individual supplier stock for each product"""
     supplier_details = {}
-    for name, data in data_fournisseurs.items():
+    for supplier_name, data in data_fournisseurs.items():
         for _, row in data['reduced_data'].iterrows():
-            product_id = str(row[ID_PRODUCT])
+            product_id = canonicalize_product_id(row[ID_PRODUCT])
             quantity = row[QUANTITY]
             if product_id not in supplier_details:
                 supplier_details[product_id] = {}
-            supplier_details[product_id][name] = quantity
+            supplier_details[product_id][supplier_name] = quantity
     return supplier_details
 
 def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs, report_gen=None):
@@ -278,6 +298,11 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
     if len(valide_fichiers_platforms) > 0 and len(valide_fichiers_fournisseurs)> 0:
         try: 
             data_fournisseurs = read_all_fournisseurs(valide_fichiers_fournisseurs)
+            if report_gen is not None:
+                try:
+                    report_gen.stats['all_suppliers'] = set(data_fournisseurs.keys())
+                except Exception:
+                    report_gen.stats['all_suppliers'] = list(data_fournisseurs.keys())
             supplier_details = collect_supplier_details(data_fournisseurs)
             
             logger.info('----------- Calcule de cumule ------------------')
@@ -297,10 +322,11 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                     logger.debug(f"[DEBUG] Platform '{name_p}' stock column dtype: {df_p[quantite_stock_p].dtype}, unique values: {df_p[quantite_stock_p].unique()[:10]}")
                     reduced_data_p = df_p[[nom_reference_p, quantite_stock_p]].copy()
                     reduced_data_p.columns = [ID_PRODUCT, QUANTITY]
+                    reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].apply(canonicalize_product_id)
                     logger.debug(f"[DEBUG] reduced_data_p[QUANTITY] dtype: {reduced_data_p[QUANTITY].dtype}, unique values: {reduced_data_p[QUANTITY].unique()[:10]}")
-                    # Ensure ID_PRODUCT columns are string before merging
-                    reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].astype(str)
-                    data_fournisseurs_cumule[ID_PRODUCT] = data_fournisseurs_cumule[ID_PRODUCT].astype(str)
+                    # Ensure canonical IDs before merging
+                    reduced_data_p[ID_PRODUCT] = reduced_data_p[ID_PRODUCT].apply(canonicalize_product_id)
+                    data_fournisseurs_cumule[ID_PRODUCT] = data_fournisseurs_cumule[ID_PRODUCT].apply(canonicalize_product_id)
                     try:
                         df_updated, stock_changes = update_plateforme(reduced_data_p, data_fournisseurs_cumule, name_p, 'cumule', supplier_details=supplier_details)
                     except Exception as merge_exc:
@@ -324,7 +350,14 @@ def mettre_a_jour_Stock(valide_fichiers_platforms, valide_fichiers_fournisseurs,
                         if report_gen:
                             report_gen.add_file_result(str(latest_file) if 'latest_file' in locals() else name_p, success=False, error_msg="Mapping extraction failed.")
                         continue
-                    df_p[quantite_stock_p] = df_p[nom_reference_p].map(map_quantites).fillna(df_p[quantite_stock_p])
+                    # Map using canonicalized platform reference
+                    try:
+                        canon_ref_col = '__canon_ref__'
+                        df_p[canon_ref_col] = df_p[nom_reference_p].apply(canonicalize_product_id)
+                        df_p[quantite_stock_p] = df_p[canon_ref_col].map(map_quantites).fillna(df_p[quantite_stock_p])
+                        df_p.drop(columns=[canon_ref_col], errors='ignore', inplace=True)
+                    except Exception:
+                        df_p[quantite_stock_p] = df_p[nom_reference_p].map(map_quantites).fillna(df_p[quantite_stock_p])
                     platform_dir = UPDATED_FILES_PATH / name_p
                     platform_dir.mkdir(parents=True, exist_ok=True)
                     timestamp = time.strftime('%Y%m%d-%H%M%S')

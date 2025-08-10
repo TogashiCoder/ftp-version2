@@ -187,7 +187,21 @@ def load_platforms_ftp(list_platforms, report_gen=None):
             ftp.login(config["user"], config["password"])
             logger.info(f"-- ✅ --  Bien connecté à l'FTP de {name}")
             filenames = ftp.nlst()
-            ftp_file = next((f for f in filenames if f.endswith((".csv", ".xls", ".xlsx", ".txt"))), None)
+            # Choose platform file with priority: canonical (not platform-prefixed and not -latest), then prefixed, then -latest, else any
+            supported_exts = (".csv", ".xls", ".xlsx", ".txt")
+            candidates = [f for f in filenames if f.lower().endswith(supported_exts)]
+            canonical = [f for f in candidates if (not f.lower().startswith(f"{name.lower()}-")) and ("-latest" not in f.lower())]
+            prefixed = [f for f in candidates if f.lower().startswith(f"{name.lower()}-") and ("-latest" not in f.lower())]
+            latests = [f for f in candidates if f.lower().startswith(f"{name.lower()}-latest")]
+            ftp_file = None
+            if canonical:
+                ftp_file = canonical[0]
+            elif prefixed:
+                ftp_file = prefixed[0]
+            elif latests:
+                ftp_file = latests[0]
+            elif candidates:
+                ftp_file = candidates[0]
             if ftp_file:
                 extension = os.path.splitext(ftp_file)[1]
                 local_path = os.path.join(DOSSIER_PLATFORMS, f"{name}-{extension}")
@@ -198,8 +212,7 @@ def load_platforms_ftp(list_platforms, report_gen=None):
                         report_gen.add_platform_processed(name)
                         report_gen.add_file_result(local_path, success=True)
                 else:
-                    if report_gen:
-                        report_gen.add_file_result(local_path, success=False, error_msg=f"Échec du téléchargement pour {name}")
+                    logger.debug(f"[DEBUG]: Candidates on FTP for {name}: {candidates}")
             else:
                 logger.exception(f"-- ⚠️ --  Aucun fichier valide trouvé pour {name}")
                 if report_gen:
@@ -356,22 +369,26 @@ def upload_updated_files_to_marketplace(dry_run=False):
                     # Choose the target remote filename to replace
                     upload_ext = file_path.suffix.lower()
                     target_remote_name = None
-                    # Priority 1: an existing -latest file for this platform and ext
-                    for fname in remote_candidates:
-                        if fname.startswith(f"{platform_name}-latest") and fname.lower().endswith(upload_ext):
-                            target_remote_name = fname
-                            break
-                    # Priority 2: an existing file prefixed with platform name and matching ext
-                    if target_remote_name is None:
-                        for fname in remote_candidates:
-                            if fname.startswith(f"{platform_name}-") and fname.lower().endswith(upload_ext):
-                                target_remote_name = fname
-                                break
-                    # Priority 3: any existing supported file (keep its original name)
-                    if target_remote_name is None and remote_candidates:
+                    # Build categorized lists
+                    latest_candidates = [f for f in remote_candidates if f.lower().startswith(f"{platform_name.lower()}-latest") and f.lower().endswith(upload_ext)]
+                    prefix_candidates = [f for f in remote_candidates if f.lower().startswith(f"{platform_name.lower()}-") and f not in latest_candidates and f.lower().endswith(upload_ext)]
+                    # Canonical: any supported file that is NOT '-latest' and NOT starting with platform prefix
+                    canonical_candidates = [f for f in remote_candidates if (not f.lower().startswith(f"{platform_name.lower()}-")) and ("-latest" not in f.lower()) and f.lower().endswith(upload_ext)]
+
+                    # Priority 1: canonical file (likely marketplace original)
+                    if canonical_candidates:
+                        target_remote_name = canonical_candidates[0]
+                    # Priority 2: prefixed file without '-latest'
+                    elif prefix_candidates:
+                        target_remote_name = prefix_candidates[0]
+                    # Priority 3: existing '-latest'
+                    elif latest_candidates:
+                        target_remote_name = latest_candidates[0]
+                    # Priority 4: any supported file
+                    elif remote_candidates:
                         target_remote_name = remote_candidates[0]
-                    # Priority 4: default to our latest file name
-                    if target_remote_name is None:
+                    else:
+                        # Default to our latest file name
                         target_remote_name = file_path.name
 
                     # Proceed with upload using temp + rename for atomic replace
@@ -394,7 +411,9 @@ def upload_updated_files_to_marketplace(dry_run=False):
                         for fname in filenames:
                             if fname == target_remote_name:
                                 continue
-                            if fname.startswith(f"{platform_name}-") and fname.lower().endswith(supported_exts):
+                            lower_name = fname.lower()
+                            # Remove '-latest' files and platform-prefixed variants
+                            if (lower_name.startswith(f"{platform_name.lower()}-") or '-latest' in lower_name) and lower_name.endswith(supported_exts):
                                 try:
                                     ftp.delete(fname)
                                     logger.info(f"[INFO]: Removed old remote file: {fname}")

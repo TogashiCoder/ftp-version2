@@ -110,6 +110,71 @@ class ReportGenerator:
                 # Add stock changes details
                 context['stock_changes'] = self.stats['stock_changes']
                 context['has_stock_changes'] = len(self.stats['stock_changes']) > 0
+
+                # Build per-platform summary: changed_count and supplier contribution percentages using real supplier names
+                per_platform = {}
+                for change in self.stats['stock_changes']:
+                    platform = change.get('platform')
+                    if not platform:
+                        continue
+                    entry = per_platform.setdefault(platform, {
+                        'changed_count': 0,
+                        'total_new_quantity': 0,
+                        'supplier_totals': {},
+                        'supplier_article_counts': {}
+                    })
+                    entry['changed_count'] += 1
+                    new_q = change.get('new_quantity', 0) or 0
+                    entry['total_new_quantity'] += int(new_q)
+                    supplier_details = change.get('supplier_details', {}) or {}
+                    for supplier, qty in supplier_details.items():
+                        entry['supplier_totals'][supplier] = entry['supplier_totals'].get(supplier, 0) + (qty or 0)
+                        # Count articles per supplier (only count if supplier contributes > 0)
+                        try:
+                            qty_val = int(qty)
+                        except Exception:
+                            qty_val = 0
+                        if qty_val > 0:
+                            entry['supplier_article_counts'][supplier] = entry['supplier_article_counts'].get(supplier, 0) + 1
+
+                # Compute percentages per supplier
+                platform_change_summary = []
+                for platform, data in per_platform.items():
+                    total_new = data['total_new_quantity'] if data['total_new_quantity'] else 0
+                    supplier_percentages = {}
+                    # Include suppliers with 0 contribution if configured
+                    include_zero = report_settings.get('include_zero_contributions', True)
+                    # Determine full supplier set from entire run (stable across multiple updates)
+                    all_suppliers = set()
+                    try:
+                        all_suppliers = set(self.stats.get('all_suppliers', set()))
+                    except Exception:
+                        pass
+                    # Fallback to per-platform scan if global set is empty
+                    if not all_suppliers:
+                        for ch in self.stats['stock_changes']:
+                            if ch.get('platform') == platform and isinstance(ch.get('supplier_details'), dict):
+                                all_suppliers.update(ch['supplier_details'].keys())
+                    # Build percentages
+                    candidate_suppliers = sorted(all_suppliers) if include_zero else sorted(data['supplier_totals'].keys())
+                    for supplier in candidate_suppliers:
+                        total_qty = data['supplier_totals'].get(supplier, 0)
+                        percent = (total_qty / total_new) * 100 if total_new else 0
+                        supplier_percentages[supplier] = round(percent, 1)
+                    # Build article counts aligned to suppliers
+                    supplier_article_counts = {}
+                    for supplier in candidate_suppliers:
+                        supplier_article_counts[supplier] = int(data['supplier_article_counts'].get(supplier, 0))
+                    platform_change_summary.append({
+                        'platform': platform,
+                        'changed_count': data['changed_count'],
+                        'supplier_percentages': supplier_percentages,
+                        'supplier_article_counts': supplier_article_counts
+                    })
+                # Sort by platform name for stable display
+                platform_change_summary.sort(key=lambda x: x['platform'])
+                context['platform_change_summary'] = platform_change_summary
+                context['has_platform_change_summary'] = len(platform_change_summary) > 0
             if context['sections'].get('errors', True):
                 context['errors'] = self.stats['errors']
             if context['sections'].get('warnings', True):

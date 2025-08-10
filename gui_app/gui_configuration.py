@@ -80,6 +80,16 @@ class ConfigurationFrame(ctk.CTkFrame):
         
         self.attach_csv_var = ctk.BooleanVar(value=self.report_config.get('attach_csv', True))
         ctk.CTkCheckBox(csv_frame, text="Joindre un fichier CSV avec les changements de stock", variable=self.attach_csv_var).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+
+        # Include zero-contribution suppliers option
+        self.include_zero_var = ctk.BooleanVar(value=self.report_config.get('include_zero_contributions', True))
+        ctk.CTkCheckBox(csv_frame, text="Inclure les fournisseurs à 0% dans le résumé", variable=self.include_zero_var).grid(row=2, column=0, sticky="w", padx=10, pady=5)
+
+        # Max attachment size
+        ctk.CTkLabel(csv_frame, text="Taille maximale des pièces jointes (MB) :").grid(row=3, column=0, sticky="w", padx=10, pady=(10,0))
+        self.max_attach_entry = ctk.CTkEntry(csv_frame)
+        self.max_attach_entry.insert(0, str(self.report_config.get('max_attachment_mb', 10)))
+        self.max_attach_entry.grid(row=4, column=0, sticky="w", padx=10, pady=5)
         
         # --- Action Buttons ---
         button_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -107,6 +117,11 @@ class ConfigurationFrame(ctk.CTkFrame):
         
         # Save CSV attachment option
         self.report_config['attach_csv'] = self.attach_csv_var.get()
+        self.report_config['include_zero_contributions'] = self.include_zero_var.get()
+        try:
+            self.report_config['max_attachment_mb'] = int(self.max_attach_entry.get())
+        except ValueError:
+            self.report_config['max_attachment_mb'] = 10
         
         if not save_yaml_config(self.report_config, self.report_settings_path):
             messagebox.showerror("Erreur", "Échec de la sauvegarde des paramètres du rapport.")

@@ -10,3 +10,4 @@ sections:
 attach_csv: true
 attach_updated_files: false
 max_attachment_mb: 10
+include_zero_contributions: true
