@@ -6,7 +6,7 @@ from utils import load_fournisseurs_config, load_plateformes_config
 from config.logging_config import logger
 from config.config_path_variables import *
 from functions.functions_check_ready_files import *
-from utils import get_entity_mappings
+from utils import get_entity_mappings, load_yaml_config
 
 # ------------------------------------------------------------------------------
 #                           FTP Configuration
@@ -108,6 +108,12 @@ def download_files_from_all_servers(ftp_servers, output_dir):
 #       Load all/few Fournisseurs/ platforms existed in env file             
 # ------------------------------------------------------------------------------
 def load_fournisseurs_ftp(list_fournisseurs, report_gen=None):
+    # Clean old downloaded files (>5h) before fetching new ones
+    try:
+        os.makedirs(DOSSIER_FOURNISSEURS, exist_ok=True)
+        delete_old_files(DOSSIER_FOURNISSEURS, max_age_hours=5, extensions=(".csv", ".xls", ".xlsx", ".txt"))
+    except Exception as _cleanup_err:
+        logger.warning(f"[WARNING]: Cleanup fournisseurs folder failed: {_cleanup_err}")
     f_data_ftp = create_ftp_config(list_fournisseurs, is_fournisseur=True)
     downloaded_files_F = {}
     for name, config in f_data_ftp.items():
@@ -167,6 +173,12 @@ def load_fournisseurs_ftp(list_fournisseurs, report_gen=None):
 
 
 def load_platforms_ftp(list_platforms, report_gen=None):
+    # Clean old downloaded platform files (>5h)
+    try:
+        os.makedirs(DOSSIER_PLATFORMS, exist_ok=True)
+        delete_old_files(DOSSIER_PLATFORMS, max_age_hours=5, extensions=(".csv", ".xls", ".xlsx", ".txt"))
+    except Exception as _cleanup_err:
+        logger.warning(f"[WARNING]: Cleanup platforms folder failed: {_cleanup_err}")
     p_data_ftp = create_ftp_config(list_platforms, is_fournisseur=False)
     downloaded_files_P = {}
     for name, config in p_data_ftp.items():
@@ -206,19 +218,22 @@ def load_platforms_ftp(list_platforms, report_gen=None):
 # ------------------------------------------------------------------------------
 def find_latest_file_for_platform(platform_dir, platform_name):
     """
-    Helper to find the latest file for a platform. Prefer <PLATFORM_NAME>-latest.csv, else pick the most recent timestamped file.
+    Helper to find the latest updated file for a platform.
+    Prefer <PLATFORM_NAME>-latest.<ext> for ext in {csv,xlsx,xls,txt},
+    else pick the most recent timestamped file across supported extensions.
     """
-    import glob
-    import os
-    from pathlib import Path
-    latest_file = platform_dir / f"{platform_name}-latest.csv"
-    if latest_file.exists():
-        return latest_file
-    # Fallback: find most recent timestamped file
-    files = list(platform_dir.glob(f"{platform_name}-*.csv"))
-    files = [f for f in files if '-latest' not in f.name]
-    if files:
-        return max(files, key=lambda f: f.stat().st_mtime)
+    supported_exts = ('.csv', '.xlsx', '.xls', '.txt')
+    # Prefer latest by extension priority
+    for ext in supported_exts:
+        latest_path = platform_dir / f"{platform_name}-latest{ext}"
+        if latest_path.exists():
+            return latest_path
+    # Fallback to most recent timestamped file across supported exts
+    candidates = []
+    for ext in supported_exts:
+        candidates.extend([f for f in platform_dir.glob(f"{platform_name}-*{ext}") if '-latest' not in f.name])
+    if candidates:
+        return max(candidates, key=lambda f: f.stat().st_mtime)
     return None
 
 
@@ -238,6 +253,36 @@ def upload_updated_files_to_marketplace(dry_run=False):
         return
 
     plateformes_creds = load_plateformes_config()
+    # Load optional S3 backup settings
+    s3_settings = load_yaml_config(CONFIG / "aws_backup.yaml") or {}
+    s3_enabled = bool(s3_settings.get("enabled", False))
+    s3_bucket = s3_settings.get("bucket")
+    s3_prefix = s3_settings.get("prefix", "backups/platforms")
+    s3_region = s3_settings.get("region")
+    s3_access_key = s3_settings.get("access_key_id")
+    s3_secret_key = s3_settings.get("secret_access_key")
+    s3_session_token = s3_settings.get("session_token")
+    s3_endpoint_url = s3_settings.get("endpoint_url")
+    s3_client = None
+    if s3_enabled and s3_bucket:
+        try:
+            import boto3  # type: ignore
+            client_kwargs = {}
+            if s3_region:
+                client_kwargs["region_name"] = s3_region
+            if s3_access_key and s3_secret_key:
+                client_kwargs["aws_access_key_id"] = s3_access_key
+                client_kwargs["aws_secret_access_key"] = s3_secret_key
+            if s3_session_token:
+                client_kwargs["aws_session_token"] = s3_session_token
+            if s3_endpoint_url:
+                client_kwargs["endpoint_url"] = s3_endpoint_url
+            s3_client = boto3.client("s3", **client_kwargs)
+            logger.info(f"[INFO]: S3 backup enabled. Bucket='{s3_bucket}', Prefix='{s3_prefix}'")
+        except Exception as e:
+            logger.error(f"[ERROR]: Failed to initialize S3 client: {e}")
+            s3_client = None
+    
     for platform_dir in upload_root.iterdir():
         if not platform_dir.is_dir():
             continue
@@ -262,10 +307,101 @@ def upload_updated_files_to_marketplace(dry_run=False):
             try:
                 with FTP(host) as ftp:  # type: ignore
                     ftp.login(user, password)  # type: ignore
+                    from datetime import datetime
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M')
+                    # Prepare local backup directory under project
+                    try:
+                        local_backup_dir = BACKUP_LOCAL_PATH / timestamp / platform_name
+                        local_backup_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        logger.warning(f"[WARNING]: Could not create local backup dir: {e}")
+
+                    # Determine existing remote files and back them up (any supported ext)
+                    remote_candidates = []
+                    backed_up_count = 0
+                    try:
+                        filenames = ftp.nlst()
+                        supported_exts = ('.csv', '.xls', '.xlsx', '.txt')
+                        remote_candidates = [f for f in filenames if f.lower().endswith(supported_exts)]
+                        for fname in remote_candidates:
+                            try:
+                                from io import BytesIO
+                                buf = BytesIO()
+                                ftp.retrbinary(f"RETR {fname}", buf.write)
+                                buf.seek(0)
+                                # 1) Always save a local backup copy in project backup folder
+                                try:
+                                    local_copy_path = local_backup_dir / fname  # type: ignore
+                                    with open(local_copy_path, 'wb') as lf:
+                                        lf.write(buf.getvalue())
+                                    backed_up_count += 1
+                                    logger.info(f"[INFO]: Local backup saved: {local_copy_path}")
+                                except Exception as e:
+                                    logger.warning(f"[WARNING]: Could not save local backup for '{fname}': {e}")
+                                # 2) Optional S3 backup
+                                if s3_client is not None:
+                                    s3_key = f"{s3_prefix}/{timestamp}/{platform_name}/{fname}"
+                                    s3_client.put_object(Bucket=s3_bucket, Key=s3_key, Body=buf.getvalue())
+                                    logger.info(f"[INFO]: Backed up remote file '{fname}' to s3://{s3_bucket}/{s3_key}")
+                            except Exception as e:
+                                logger.warning(f"[WARNING]: Failed to back up remote file '{fname}' for {platform_name}: {e}")
+                    except Exception as e:
+                        logger.warning(f"[WARNING]: Could not list remote files for {platform_name}: {e}")
+
+                    # If there were remote files and none were backed up, do not overwrite
+                    if len(remote_candidates) > 0 and backed_up_count == 0:
+                        logger.error(f"[ERROR]: Backup verification failed for {platform_name}. Aborting upload.")
+                        raise Exception("Backup verification failed")
+
+                    # Choose the target remote filename to replace
+                    upload_ext = file_path.suffix.lower()
+                    target_remote_name = None
+                    # Priority 1: an existing -latest file for this platform and ext
+                    for fname in remote_candidates:
+                        if fname.startswith(f"{platform_name}-latest") and fname.lower().endswith(upload_ext):
+                            target_remote_name = fname
+                            break
+                    # Priority 2: an existing file prefixed with platform name and matching ext
+                    if target_remote_name is None:
+                        for fname in remote_candidates:
+                            if fname.startswith(f"{platform_name}-") and fname.lower().endswith(upload_ext):
+                                target_remote_name = fname
+                                break
+                    # Priority 3: any existing supported file (keep its original name)
+                    if target_remote_name is None and remote_candidates:
+                        target_remote_name = remote_candidates[0]
+                    # Priority 4: default to our latest file name
+                    if target_remote_name is None:
+                        target_remote_name = file_path.name
+
+                    # Proceed with upload using temp + rename for atomic replace
                     logger.info(f"[INFO]: Connected to FTP for {platform_name} (attempt {attempt}).")
+                    temp_name = f"{target_remote_name}.tmp"
                     with open(file_path, "rb") as f:
-                        ftp.storbinary(f"STOR {file_path.name}", f)
-                    logger.info(f"[INFO]: Uploaded updated file for {platform_name} to FTP successfully.")
+                        ftp.storbinary(f"STOR {temp_name}", f)
+                    try:
+                        ftp.rename(temp_name, target_remote_name)
+                    except Exception as e:
+                        logger.warning(f"[WARNING]: Atomic rename failed, attempting direct overwrite: {e}")
+                        with open(file_path, "rb") as f:
+                            ftp.storbinary(f"STOR {target_remote_name}", f)
+
+                    logger.info(f"[INFO]: Uploaded and replaced file for {platform_name}: {target_remote_name}")
+
+                    # Cleanup: remove other old remote files for this platform to avoid duplicates
+                    try:
+                        filenames = ftp.nlst()
+                        for fname in filenames:
+                            if fname == target_remote_name:
+                                continue
+                            if fname.startswith(f"{platform_name}-") and fname.lower().endswith(supported_exts):
+                                try:
+                                    ftp.delete(fname)
+                                    logger.info(f"[INFO]: Removed old remote file: {fname}")
+                                except Exception as e:
+                                    logger.warning(f"[WARNING]: Could not delete remote file '{fname}': {e}")
+                    except Exception as e:
+                        logger.warning(f"[WARNING]: Cleanup listing failed for {platform_name}: {e}")
                     success = True
                     break
             except Exception as e:

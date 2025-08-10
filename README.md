@@ -79,6 +79,16 @@
 - Downloads all relevant files for each supplier/platform.
 - Uploads updated files to platform FTP, matching the required file format.
 
+### Optional S3 Backup for Platform Files
+
+- Configure `config/aws_backup.yaml` (use `config/aws_backup.example.yaml` as a template):
+  - `enabled`: true/false to activate S3 backups
+  - `bucket`, `prefix`, `region`: S3 destination
+  - Optional: explicit credentials (or rely on environment/instance profile)
+- When enabled, before uploading to platform FTP, existing remote platform files are backed up to S3 under:
+  - `s3://<bucket>/<prefix>/<YYYYMMDD_HHMM>/<PlatformName>/<file>`
+- If S3 is disabled/unavailable, a fallback FTP backup is created under `/backup/<YYYYMMDD_HHMM>/<PlatformName>/` on the platform FTP server.
+
 ### **YAML Configuration Structure**
 
 - All connections, mappings, encodings, and settings are stored in YAML files for transparency and version control.

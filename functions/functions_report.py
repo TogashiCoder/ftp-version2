@@ -158,7 +158,8 @@ class ReportGenerator:
                     'product_id': change['product_id'],
                     'old_quantity': change['old_quantity'],
                     'new_quantity': change['new_quantity'],
-                    'difference': change['new_quantity'] - change['old_quantity']
+                    'difference': change['new_quantity'] - change['old_quantity'],
+                    'run_timestamp': timestamp
                 }
                 
                 # Add individual supplier quantities
@@ -169,6 +170,16 @@ class ReportGenerator:
                 records.append(record)
             
             df_all = pd.DataFrame(records)
+            # Enforce column order: core columns first, then supplier columns (sorted)
+            core_cols = ['platform', 'product_id', 'old_quantity', 'new_quantity', 'difference', 'run_timestamp']
+            supplier_cols = [f'stock_{s}' for s in sorted_suppliers]
+            for col in core_cols:
+                if col not in df_all.columns:
+                    df_all[col] = None
+            for col in supplier_cols:
+                if col not in df_all.columns:
+                    df_all[col] = None
+            df_all = df_all[core_cols + supplier_cols]
             platforms = df_all['platform'].unique()
             csv_files = []
             
@@ -180,8 +191,12 @@ class ReportGenerator:
                 csv_filename = f"stock_changes_{platform}_{timestamp}.csv"
                 csv_path = LOG_FOLDER / csv_filename
                 
-                # Save to CSV
-                df_platform.to_csv(csv_path, index=False, encoding='utf-8-sig')
+                # Save to CSV (sorted by product_id for easier review)
+                try:
+                    df_platform_sorted = df_platform.sort_values(by=['product_id'])
+                except Exception:
+                    df_platform_sorted = df_platform
+                df_platform_sorted.to_csv(csv_path, index=False, encoding='utf-8-sig')
                 
                 csv_files.append(csv_path)
                 self.logger.info(f"Rapport CSV généré pour {platform} : {csv_path}")
@@ -222,10 +237,25 @@ class ReportGenerator:
             if report_settings.get('attach_csv', True) and self.stats['stock_changes']:
                 csv_paths = self.generate_csv_report()
                 if csv_paths:
+                    # Enforce total size cap for attachments
+                    max_mb = report_settings.get('max_attachment_mb', 10)
+                    try:
+                        max_bytes = int(max_mb) * 1024 * 1024
+                    except Exception:
+                        max_bytes = 10 * 1024 * 1024
+                    total_bytes = 0
                     for csv_path in csv_paths:
                         if csv_path.exists():
-                            contents.append(str(csv_path))
-                            self.logger.info(f"Fichier CSV ajouté en pièce jointe : {csv_path.name}")
+                            try:
+                                size = csv_path.stat().st_size
+                            except Exception:
+                                size = 0
+                            if total_bytes + size <= max_bytes:
+                                contents.append(str(csv_path))
+                                total_bytes += size
+                                self.logger.info(f"Fichier CSV ajouté en pièce jointe : {csv_path.name}")
+                            else:
+                                self.logger.warning(f"Pièce jointe ignorée (taille max atteinte) : {csv_path.name}")
             
             yag = yagmail.SMTP(user=smtp_email, password=smtp_password)
             subject = f"Rapport Mise à Jour Automatique – {datetime.now().strftime('%d/%m/%Y')}"

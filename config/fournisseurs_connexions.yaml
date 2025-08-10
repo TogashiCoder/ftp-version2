@@ -33,10 +33,10 @@ NTY:
   port: 21
   type: FTP
   username: defaultAJS
-SKV:
-  host: vps104285.serveur-vps.net
-  notes: Fournisseur F
-  password: bS_SPxGh2dhfM
-  port: 21
-  type: FTP
-  username: defaultSKV
+# SKV:
+#   host: vps104285.serveur-vps.net
+#   notes: Fournisseur F
+#   password: bS_SPxGh2dhfM
+#   port: 21
+#   type: FTP
+#   username: defaultSKV

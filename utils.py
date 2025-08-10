@@ -172,6 +172,38 @@ def detect_encoding_fast(file_path: str, size_bytes: int = 2048) -> str:
 
 
 # ------------------------------------------------------------------------
+#                    Delete files older than N hours
+# ------------------------------------------------------------------------
+def delete_old_files(directory: Path, max_age_hours: int = 5, extensions: tuple[str, ...] | None = None) -> None:
+    """
+    Delete files in the given directory older than `max_age_hours`.
+    If `extensions` is provided, only files with these extensions are considered.
+    Safe no-op if directory does not exist.
+    """
+    try:
+        directory_path = Path(directory)
+        if not directory_path.exists() or not directory_path.is_dir():
+            return
+        import time
+        now = time.time()
+        max_age_seconds = max_age_hours * 3600
+        for item in directory_path.iterdir():
+            try:
+                if not item.is_file():
+                    continue
+                if extensions is not None and item.suffix.lower() not in tuple(e.lower() for e in extensions):
+                    continue
+                age_seconds = now - item.stat().st_mtime
+                if age_seconds > max_age_seconds:
+                    item.unlink(missing_ok=True)
+                    logger.info(f"-- 🗑️ -- Ancien fichier supprimé: {item.name}")
+            except Exception as e:
+                logger.warning(f"-- ⚠️ -- Échec de suppression '{item}': {e}")
+    except Exception as e:
+        logger.warning(f"-- ⚠️ -- Erreur lors du nettoyage de {directory}: {e}")
+
+
+# ------------------------------------------------------------------------
 #               Vérification:  si le fichier n'a pas d'entête 
 # ------------------------------------------------------------------------
 def has_valid_header(df: pd.DataFrame) -> bool:
@@ -398,12 +430,30 @@ def read_dataset_file(file_name: str, usecols=None, header='infer') -> dict:
             return {'dataset':df, 'encoding':encoding, 'sep':sep}
         
         elif ext in {'.xls', '.xlsx'}:
-            #df = pd.read_excel(file_name, usecols=usecols)
-            temp_df = pd.read_excel(file_name,  nrows=4,  header=0)
-            header_option = 0 if has_valid_header(temp_df) else None
-            df = pd.read_excel(file_name, header=header_option, usecols=usecols)
-            logger.info(f"📄 Fichier lu : {file_name} -- avec ({len(df)} lignes)")
-            return {'dataset':df, 'encoding':'', 'sep':''}
+            # Prefer explicit engines and provide CSV fallback if content mismatch
+            engines_to_try = []
+            if ext == '.xlsx':
+                engines_to_try = ['openpyxl', None]  # None lets pandas infer
+            else:
+                engines_to_try = ['xlrd', None]
+            last_error = None
+            for engine in engines_to_try:
+                try:
+                    temp_df = pd.read_excel(file_name, nrows=4, header=0, engine=engine)
+                    header_option = 0 if has_valid_header(temp_df) else None
+                    df = pd.read_excel(file_name, header=header_option, usecols=usecols, engine=engine)
+                    logger.info(f"📄 Fichier lu : {file_name} -- avec ({len(df)} lignes)")
+                    return {'dataset': df, 'encoding': '', 'sep': ''}
+                except Exception as e:
+                    last_error = e
+                    continue
+            # Fallback: some .xlsx are actually CSV; try robust CSV reader
+            try:
+                df, encoding, sep = read_csv_file_checking_encodings_sep(file_name, usecols=usecols, header='infer')
+                logger.warning(f"[WARN] File '{file_name}' has Excel extension but was read as CSV (encoding='{encoding}', sep='{sep}').")
+                return {'dataset': df, 'encoding': encoding, 'sep': sep}
+            except Exception:
+                raise last_error if last_error else ValueError(f"Unsupported Excel file: {file_name}")
        
         else:
             raise ValueError(f"Extension de fichier non supportée: {file_name}")

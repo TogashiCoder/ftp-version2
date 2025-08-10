@@ -1,0 +1,10 @@
+enabled: true
+bucket: taoufikstockscript
+prefix: backups/platforms
+region: eu-north-1
+# Optional explicit credentials (leave empty to use environment/instance role)
+access_key_id: ""
+secret_access_key: ""
+session_token: ""
+# Optional custom endpoint (leave empty for AWS default)
+endpoint_url: ""

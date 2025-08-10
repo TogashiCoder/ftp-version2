@@ -8,3 +8,5 @@ sections:
   warnings: true
 
 attach_csv: true
+attach_updated_files: false
+max_attachment_mb: 10
