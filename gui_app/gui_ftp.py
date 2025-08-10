@@ -1,6 +1,8 @@
 import os
 import sys
 import time 
+import shutil
+from pathlib import Path
 import threading
 import customtkinter as ctk
 
@@ -9,6 +11,7 @@ from functions.functions_update import *
 from tkinter import filedialog, messagebox
 from config.temporary_data_list import current_dataFiles
 from config.config_path_variables import *
+from config.logging_config import LOG_FILEPATH
 from functions.functions_FTP import upload_updated_files_to_marketplace
 from functions.functions_report import ReportGenerator
 from utils import load_fournisseurs_config, load_plateformes_config, get_valid_fournisseurs, get_valid_platforms
@@ -219,6 +222,53 @@ class MajFTPFrame(ctk.CTkFrame):
 
 
     def _run_update_process(self):
+        # Clean local inputs/outputs for a fresh GUI run (preserve the current log file)
+        try:
+            # Clean fournisseurs and platforms directories
+            for dir_path in (DOSSIER_FOURNISSEURS, DOSSIER_PLATFORMS):
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+                for item in Path(dir_path).iterdir():
+                    try:
+                        if item.is_dir():
+                            shutil.rmtree(item, ignore_errors=True)
+                        else:
+                            try:
+                                item.unlink(missing_ok=True)
+                            except TypeError:
+                                if item.exists():
+                                    item.unlink()
+                    except Exception:
+                        pass
+            # Clean UPDATED_FILES (remove subfolders)
+            Path(UPDATED_FILES_PATH_RACINE).mkdir(parents=True, exist_ok=True)
+            for item in Path(UPDATED_FILES_PATH_RACINE).iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        try:
+                            item.unlink(missing_ok=True)
+                        except TypeError:
+                            if item.exists():
+                                item.unlink()
+                except Exception:
+                    pass
+            # Clean old logs except the current one
+            try:
+                current_log = Path(LOG_FILEPATH)
+            except Exception:
+                current_log = None
+            Path(LOG_FOLDER).mkdir(parents=True, exist_ok=True)
+            for log_item in Path(LOG_FOLDER).glob('*.log'):
+                try:
+                    if current_log is not None and log_item.resolve() == current_log.resolve():
+                        continue
+                    log_item.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         report_gen = ReportGenerator()
         report_gen.start_operation()
         try:

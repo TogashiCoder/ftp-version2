@@ -1,7 +1,8 @@
 import sys
 import argparse
+import shutil
+from pathlib import Path
 
-from config.logging_config import logger
 from config.config_path_variables import *  # ensures paths and .env are loaded
 
 from functions.functions_report import ReportGenerator
@@ -44,8 +45,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _clean_directory_contents(dir_path: Path) -> None:
+    try:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        for item in dir_path.iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    try:
+                        item.unlink(missing_ok=True)
+                    except TypeError:
+                        # Python <3.8 compatibility
+                        if item.exists():
+                            item.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def main() -> int:
     args = parse_args()
+
+    # Fresh start: clean local inputs/outputs before any logging starts
+    _clean_directory_contents(DOSSIER_FOURNISSEURS)
+    _clean_directory_contents(DOSSIER_PLATFORMS)
+    _clean_directory_contents(LOG_FOLDER)
+    _clean_directory_contents(UPDATED_FILES_PATH_RACINE)
+
+    # Import logger after cleaning logs to avoid deleting an open file handler
+    from config.logging_config import logger
 
     # Determine scope from YAML unless explicitly provided
     fournisseurs_config = load_fournisseurs_config() or {}

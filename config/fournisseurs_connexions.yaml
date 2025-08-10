@@ -33,10 +33,17 @@ NTY:
   port: 21
   type: FTP
   username: defaultAJS
-# SKV:
-#   host: vps104285.serveur-vps.net
-#   notes: Fournisseur F
-#   password: bS_SPxGh2dhfM
-#   port: 21
-#   type: FTP
-#   username: defaultSKV
+Primeturbo:
+  host: vps104285.serveur-vps.net
+  notes: ''
+  password: '@MMWfw3jf'
+  port: 21
+  type: FTP
+  username: defaultPrimeturbo
+eminia trading:
+  host: vps104285.serveur-vps.net
+  notes: ''
+  password: ow4QH#bbM5
+  port: 21
+  type: FTP
+  username: defaultEminia
